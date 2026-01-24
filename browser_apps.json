@@ -1,0 +1,47 @@
+{
+  "browsers": {
+    "chrome": {
+      "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "profile": "Default"
+    },
+    "edge": {
+      "path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "profile": "Default"
+    }
+  },
+
+  "commonArgs": [
+    "--disable-extensions",
+    "--disable-sync",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--disable-component-update",
+    "--disable-features=TranslateUI,MediaRouter",
+    "--disable-hang-monitor",
+    "--no-first-run",
+    "--no-default-browser-check"
+  ],
+
+  "apps": [
+    {
+      "name": "ChatGPT",
+	  "title": "ChatGPT",
+      "url": "https://chat.openai.com",
+      "browser": "chrome",
+      "memory": 1,
+      "hotkey": "#g",
+	  "aumid": "ChatGPT"
+
+    },
+    {
+      "name": "DMS",
+      "title": "DMS - Data Management Service",
+      "url": "https://dms.aliyun.com/?accounttraceid=b9f210d31c98452385630e6f721e8cdedacz",
+      "browser": "chrome",
+      "memory": 1,
+      "hotkey": "#d",
+	  "aumid": "DMS"
+
+    }
+  ]
+}
