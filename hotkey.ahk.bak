@@ -1,6 +1,10 @@
 #Requires AutoHotkey v2.0
 #SingleInstance force
 #Include %A_ScriptDir%\lib\Jxon.ahk
+; 引入 UIA 核心和浏览器专用扩展
+#Include %A_ScriptDir%\lib\UIA.ahk
+#Include %A_ScriptDir%\lib\UIA_Browser.ahk
+
 #UseHook true   ; 强制使用键盘钩子
 SetCapsLockState "AlwaysOff"
 
@@ -1784,23 +1788,211 @@ for app in CONFIG["apps"] {
 BindActivateApp(app) {
     return (*) => ActivateApp(app)
 }
+global hwndCache := Map()
+BuildBrowserCache()
+BuildBrowserCache() {
+    global hwndCache
+    hwndCache.Clear()
+
+    ; 获取所有 chrome.exe 句柄
+    ids := WinGetList("ahk_exe chrome.exe")
+
+    for hwnd in ids {
+        ; 1. 过滤掉没有标题的隐藏窗口（Chrome 后台进程）
+        title := WinGetTitle("ahk_id " hwnd)
+        if (title == "")
+            continue
+
+        ; 2. 识别是否为 App 窗口
+        try {
+            cUIA := UIA_Browser("ahk_id " hwnd)
+			; 优先尝试 UIA 属性获取，若失败则用 JS 保底
+            url := cUIA.GetCurrentURL(false)
+            if (url == "" || url == "https://") {
+                url := cUIA.JSExecute("window.location.href")
+            }
+
+            url := Trim(url, " `"")
+            if (InStr(url, "https://chatgpt.com")) {
+				; chatgpt和dms两个PWA，存入缓存
+                hwndCache["chatgpt"] := hwnd
+			} else if (InStr(url, "https://dms.aliyun.com")) {
+                hwndCache["dms"] := hwnd
+            }
+
+			;~ 解除引用，AHK 的引用计数机制会自动释放这些 COM 对象
+			cUIA := ""
+
+        } catch {
+            continue
+        }
+    }
+	;~ DumpMap(hwndCache)
+}
+
+DumpMap(hwndCache) {
+    i := 1
+    out := ""
+    for url, hwnd in hwndCache {
+        out .= i ".key:`n" url "`nvalue:`n" hwnd "`n`n"
+        i++
+    }
+
+	local _gui := Gui("+AlwaysOnTop", "Dump")
+    _gui.AddEdit("w400 h300 ReadOnly", out)
+    _gui.Show()
+}
 
 ActivateApp(app) {
-    WinTitle := app["title"]
-    exe := app["browser"] = "edge" ? "msedge.exe" : "chrome.exe"
+    global hwndCache
 
-    if WinExist(WinTitle) {
-        ; 检查窗口是否已激活
-        if WinActive(WinTitle) {
-            WinMinimize
+    exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
+
+    targetURL := app["url"]
+   if (InStr(targetURL, "https://chatgpt.com")) {
+        targetURL := "chatgpt"
+    } else if (InStr(targetURL, "https://dms.aliyun.com")) {
+        targetURL := "dms"
+    }
+
+
+    ; 精准匹配 URL
+    if hwndCache.Has(targetURL) {
+        ahk_id := hwndCache[targetURL]
+        if WinActive("ahk_id " ahk_id) {
+            WinMinimize("ahk_id " ahk_id)
         } else {
-            WinActivate
+            WinActivate("ahk_id " ahk_id)
+        }
+        return
+    }
+    ; 1️扫描现有窗口
+/*     for ahk_id in WinGetList("ahk_exe " exe) {
+        ; 排除无效窗口
+        if !WinGetTitle(ahk_id)
+            continue
+
+        ;~ url := GetChromeURL(ahk_id)
+
+        url := 111
+
+
+MsgBox 222 url
+        ; 精准匹配 URL
+        if url && InStr(url, targetURL) {
+            if WinActive("ahk_id " ahk_id) {
+                WinMinimize("ahk_id " ahk_id)
+            } else {
+                WinActivate("ahk_id " ahk_id)
+            }
+            return
+        }
+    } */
+
+
+    ; 2️找不到 → 启动 App
+    ;~ Run APP_DIR "\" app["name"] ".lnk"
+
+
+    /* key := app["aumid"]
+    ; 1️如果已有缓存窗口
+    if hwndCache.Has(key) {
+        ahk_id := hwndCache[key]
+        if (ahk_id && WinExist("ahk_id " ahk_id)) {
+            ; 这是 Clash Verge 程序
+            if WinActive("ahk_id " ahk_id) {
+                WinMinimize("ahk_id " ahk_id)
+            } else {
+                WinActivate("ahk_id " ahk_id)
+            }
+            return
+        } else {
+            hwndCache.Delete(key)
         }
     } else {
-        file := APP_DIR "\" app["name"] ".lnk"
-        run file
+        ; 2️查找现有窗口
+        for hwnd in WinGetList("ahk_exe " exe) {
+            ; 排除空标题 / 后台进程
+            title := WinGetTitle(hwnd)
+            if !title
+                continue
+
+            ; 可选：URL / 标题关键词 / App 名
+            if InStr(title, app["name"]) {
+
+                hwndCache[key] := hwnd
+                ToolTip  111 hwndCache[key]
+                WinActivate("ahk_id " hwnd)
+                return
+            }
+        }
+
+        ; 3️启动 App
+        Run APP_DIR "\" app["name"] ".lnk"
+
+        ; 4️延迟捕获新窗口
+        SetTimer(() => CaptureNewWindow(app, hwndCache), -500)
+    }
+    */
+
+
+
+
+
+
+}
+
+CaptureNewWindow(app, hwndCache) {
+    exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
+    key := app["aumid"]
+
+    for hwnd in WinGetList("ahk_exe " exe) {
+        ; 排除空标题 / 后台进程
+        title := WinGetTitle(hwnd)
+        if !title
+            continue
+
+        ; 可选：URL / 标题关键词 / App 名
+        if InStr(title, app["name"]) {
+            hwndCache[key] := hwnd
+            ToolTip  222 hwndCache[key]
+            break
+        }
     }
 }
+;~ global UIA
+;~ UIA := UIA_Interface()
+EnsureUIA() {
+    static uia := 0
+    if !uia
+        uia := UIA()
+    return uia
+}
+
+InitUIA() {
+    static uia := 0
+    if !uia
+        uia := UIA()
+    return uia
+}
+
+
+
+GetBrowserURL(hwnd) {
+        try {
+        win := UIA.Element(UIA.ElementFromHandle(hwnd))
+        for edit in win.FindAll({ Type: UIA.ControlType.Edit }) {
+            val := ""
+            try val := edit.Value
+            if val && RegExMatch(val, "i)^(https?|edge|chrome)://")
+                return val
+        }
+    }
+    catch {
+    }
+    return ""
+}
+
 
 
 
