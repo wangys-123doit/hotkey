@@ -9,7 +9,6 @@
 SetCapsLockState "AlwaysOff"
 
 #Include hotkeys_public.ahk
-
 ; 如果文件存在才加载
 if FileExist(A_ScriptDir "\hotkeys_private.ahk") {
     #Include hotkeys_private.ahk
@@ -21,6 +20,17 @@ if !A_IsAdmin {
     Run('*RunAs "' A_ScriptFullPath '"')
     ExitApp
 }
+
+
+
+global x86ProgramFilesDir := EnvGet("ProgramFiles(x86)")
+
+; 使用正则表达式替换开头的 C: 为 D:
+; ^ 表示匹配字符串开头，i 表示不区分大小写
+global D_Programs := RegExReplace(A_ProgramFiles, "(?i)^C:", "D:")
+
+; 获取 C:\Users\用户名\AppData\Local
+;~ global LocalPath := EnvGet("LOCALAPPDATA")
 
 ; 开关窗口函数，判断窗口激活状态并执行显示隐藏操作
 ; ahk_exe:exe程序名
@@ -504,7 +514,7 @@ LWin & z::
 #F2::
 {
 	ahk_exe := "wemeetapp.exe"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\腾讯会议.lnk"
+	APP_PATH := A_ProgramsCommon "\腾讯会议.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+F3打开clash
@@ -514,7 +524,7 @@ LWin & z::
     ahk_exe := "clash-verge.exe"
     winTitle := "Clash Verge"
 
-	APP_PATH := "C:\Program Files\Clash Verge\clash-verge.exe"
+	APP_PATH := A_ProgramFiles "\Clash Verge\clash-verge.exe"
 
     if WinExist("ahk_exe " ahk_exe) {
         ; 获取主窗口的进程 ID (PID)
@@ -535,7 +545,7 @@ LWin & z::
 #F4::
 {
 	ahk_exe := "Androws.exe"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\小红书.lnk"
+	APP_PATH := A_ProgramsCommon "\小红书.lnk"
     WinTitle := "小红书"
     ToggleWindowByTitle(ahk_exe,WinTitle,APP_PATH)
 
@@ -546,7 +556,7 @@ LWin & z::
 {
 	ahk_exe := "Androws.exe"
     WinTitle := "微信读书"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\微信读书.lnk"
+	APP_PATH := A_ProgramsCommon "\微信读书.lnk"
     ToggleWindowByTitle(ahk_exe,WinTitle,APP_PATH)
 
 }
@@ -554,7 +564,7 @@ LWin & z::
 #F6::
 {
 	ahk_exe := "fastpdf.exe"
-	APP_PATH := "C:\Users\X1\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\PDF阅读编辑器.lnk"
+	APP_PATH := A_Programs "\PDF阅读编辑器.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+F7打开AdminRadiator
@@ -582,7 +592,7 @@ LWin & z::
 
 
 	;~ ahk_exe := "clash-verge.exe"
-	;~ APP_PATH := "C:\Program Files\Clash Verge\clash-verge.exe"
+	;~ APP_PATH := A_ProgramFiles "\Clash Verge\clash-verge.exe"
 
     ;~ ToggleWindow(ahk_exe, APP_PATH)
 
@@ -593,7 +603,7 @@ LWin & z::
 ;~ #F8::
 ;~ {
 	;~ ahk_exe := "PhoneExperienceHost.exe"
-	;~ APP_PATH := "C:\Program Files\WindowsApps\Microsoft.YourPhone_1.25072.63.0_x64__8wekyb3d8bbwe\PhoneExperienceHost.exe"
+	;~ APP_PATH := A_ProgramFiles "\WindowsApps\Microsoft.YourPhone_1.25072.63.0_x64__8wekyb3d8bbwe\PhoneExperienceHost.exe"
 
     ;~ ToggleWindow(ahk_exe, APP_PATH)
 
@@ -622,21 +632,21 @@ LWin & z::
 #^r::
 {
 	ahk_exe := "WindowsTerminal.exe"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\PowerShell\PowerShell 7 (x64).lnk"
+	APP_PATH := A_ProgramsCommon "\PowerShell\PowerShell 7 (x64).lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; Win + 8热键打开powerdesigner
 #9::
 {
 	ahk_exe := "PdShell16.exe"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\SAP\PowerDesigner 16\PowerDesigner.lnk"
+	APP_PATH := A_ProgramsCommon "\SAP\PowerDesigner 16\PowerDesigner.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; Win + ctrl + q热键打开navicat
 #8::
 {
 	ahk_exe := "navicat.exe"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\PremiumSoft\Navicat Premium 17.lnk"
+	APP_PATH := A_ProgramsCommon "\PremiumSoft\Navicat Premium 17.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; Win + y热键打开手机连接
@@ -651,14 +661,14 @@ LWin & z::
 #^t::
 {
 	ahk_exe := "Telegram.exe"
-	APP_PATH := "D:\Program Files (x86)\Telegram Desktop\Telegram.exe"
+	APP_PATH := D_Programs " (x86)\Telegram Desktop\Telegram.exe"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+f打开edge
 #f::
 {
 	ahk_exe := "msedge.exe"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft Edge.lnk"
+	APP_PATH := A_ProgramsCommon "\Microsoft Edge.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; Win + `热键打开Obsidian
@@ -893,7 +903,7 @@ isProxy := 0  ; 初始值为 0
 
     } else {
 
-        APP_PATH := "D:\Program Files\Clash\Clash for Windows.exe"
+        APP_PATH := D_Programs "\Clash\Clash for Windows.exe"
         Run APP_PATH  ; Open a new Notepad window
 
         if WinWaitActive("ahk_exe " ahk_exe,,0.5){
@@ -1276,8 +1286,6 @@ HandleAppHotkey(hotkey) {
 }
 
 
-
-
 ^#s::
 {
 	ahk_exe := "ApplicationFrameHost.exe"
@@ -1380,7 +1388,7 @@ showAppListView(ahk_class) {
 #n::
 {
 	ahk_exe := "notepad++.exe"
-	APP_PATH := "D:\Program Files\Notepad++\notepad++.exe"
+	APP_PATH := D_Programs "\Notepad++\notepad++.exe"
 
     ToggleWindow(ahk_exe, APP_PATH)
 
@@ -1398,28 +1406,28 @@ showAppListView(ahk_class) {
 #^x::
 {
 	ahk_exe := "wechatdevtools.exe"
-	APP_PATH := "C:\Users\X1\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\微信开发者工具\微信开发者工具.lnk"
+	APP_PATH := A_Programs "\微信开发者工具\微信开发者工具.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+shift+x打开Xmind
 #+x::
 {
 	ahk_exe := "Xmind.exe"
-	APP_PATH := "C:\Users\X1\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Xmind.lnk"
+	APP_PATH := A_Programs "\Xmind.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+ctrl+w打开word
 #^w::
 {
 	ahk_exe := "WINWORD.EXE"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Word.lnk"
+	APP_PATH := A_ProgramsCommon "\Word.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+ctrl+p打开ppt
 #^p::
 {
 	ahk_exe := "POWERPNT.EXE"
-	APP_PATH := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\PowerPoint.lnk"
+	APP_PATH := A_ProgramsCommon "\PowerPoint.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 
@@ -1427,7 +1435,7 @@ showAppListView(ahk_class) {
 ^space::
 {
 	ahk_exe := "Code.exe"
-	APP_PATH := "C:\Users\X1\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Visual Studio Code\Visual Studio Code.lnk"
+	APP_PATH := A_Programs "\Visual Studio Code\Visual Studio Code.lnk"
 
     ToggleWindow(ahk_exe, APP_PATH)
 
@@ -1457,7 +1465,7 @@ RAlt Up:: {
     ahk_class := "Tauri Window"
 	ahk_exe := "yuanbao.exe"
 	winTitle := "元宝"
-	APP_PATH := "D:\Program Files\Tencent\Yuanbao\yuanbao.exe"
+	APP_PATH := D_Programs "\Tencent\Yuanbao\yuanbao.exe"
 
     if WinExist("ahk_exe " ahk_exe) {
         ; 获取主窗口的进程 ID (PID)
@@ -1479,14 +1487,14 @@ RAlt Up:: {
 #s::
 {
 	ahk_exe := "Everything.exe"
-	APP_PATH := "C:\Program Files (x86)\Everything 1.5a\Everything.exe"
+	APP_PATH := A_ProgramFiles " (x86)\Everything 1.5a\Everything.exe"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
 #c::
 {
 	ahk_exe := "Xshell.exe"
-	APP_PATH := "C:\Program Files (x86)\NetSarang\Xshell 8\Xshell.exe"
+	APP_PATH := A_ProgramFiles " (x86)\NetSarang\Xshell 8\Xshell.exe"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
@@ -1495,7 +1503,7 @@ RAlt Up:: {
 {
     ahk_exe := "Weixin.exe"
     WinTitle := "Weixin"
-    APP_PATH := "D:\Program Files\Tencent\Weixin\Weixin.exe"
+    APP_PATH := D_Programs "\Tencent\Weixin\Weixin.exe"
 
     ToggleWindow2(ahk_exe, WinTitle, APP_PATH)
 }
@@ -1514,29 +1522,18 @@ RAlt Up:: {
             WinActivate
         }
     }
-
-    ;    if WinExist("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
-    ;    ; 检查窗口是否已激活
-    ;    if WinActive("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
-    ;        WinMinimize
-    ;    } else {
-    ;        WinActivate
-    ;    }
-    ;} else {
-    ;    Run APP_PATH
-    ;}
 }
 #q::
 {
     ahk_exe := "WXWork.exe"
-	APP_PATH := "D:\Program Files (x86)\WXWork\WXWork.exe"
+	APP_PATH := D_Programs " (x86)\WXWork\WXWork.exe"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
 #F11::
 {
     ahk_exe := "SciTE.exe"
-	APP_PATH := "C:\Program Files\AutoHotkey\SciTE\SciTE.exe"
+	APP_PATH := A_ProgramFiles "\AutoHotkey\SciTE\SciTE.exe"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
@@ -1544,7 +1541,7 @@ RAlt Up:: {
 #!g::
 {
 	ahk_exe := "mintty.exe" ; git-bash
-	APP_PATH := "C:\Program Files\Git\git-bash.exe" ; git-bash
+	APP_PATH := A_ProgramFiles "\Git\git-bash.exe" ; git-bash
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
@@ -1556,42 +1553,7 @@ global APP_DIR := A_ScriptDir "\apps"
 global AppMgr := {}
 #f10::
 {
-
 	GuiAppManager()
-    ;~ APP_DIR := "C:\Users\you\Desktop\BrowserApps"
-;~ CONFIG := { "browsers": { "chrome": { "path": "C:\Program Files\Google\Chrome\Application\chrome.exe", "profile": "Default" } },
-            ;~ "commonArgs": [ "--disable-extensions", "--disable-sync" ] }
-
-;~ app := { "name": "ChatGPT", "url": "https://chat.openai.com", "browser": "chrome", "aumid": "BrowserApp.ChatGPT" }
-
-;~ chromeArgs := "--profile-directory=Default --app=https://chat.openai.com --disable-extensions --disable-sync"
-
-
-
-;~ ps := Format(("$Target = '{1}'`n"
-;~ "$Args   = '{2}'`n"
-;~ "$Lnk    = '{3}'`n"
-;~ "$AUMID  = '{4}'`n`n"
-
-;~ "$Wsh = New-Object -ComObject WScript.Shell`n"
-;~ "$S = $Wsh.CreateShortcut($Lnk)`n"
-;~ "$S.TargetPath = $Target`n"
-;~ "$S.Arguments  = $Args`n"
-;~ "$S.IconLocation = `"$Target,0`"`n"
-;~ "$S.WorkingDirectory = Split-Path $Target`n"
-;~ "$S.Save()`n`n"
-
-;~ "$bytes = [System.Text.Encoding]::Unicode.GetBytes(`"`0$AUMID`")`n"
-;~ "$stream = [System.IO.File]::Open($Lnk, 'Open', 'ReadWrite')`n"
-;~ "$stream.Seek(0x800, 'Begin') | Out-Null`n"
-;~ "$stream.Write($bytes, 0, $bytes.Length)`n"
-;~ "$stream.Close()"
-;~ ),
-;~ 1, 2, 3 , 4
-;~ )
-
-;~ MsgBox ps  ; 可先验证生成的 PowerShell 内容
-
 }
 
 GuiAppManager() {
@@ -1855,7 +1817,6 @@ ActivateApp(app) {
         targetURL := "dms"
     }
 
-
     ; 精准匹配 URL
     if hwndCache.Has(targetURL) {
         ahk_id := hwndCache[targetURL]
@@ -1866,131 +1827,8 @@ ActivateApp(app) {
         }
         return
     }
-    ; 1️扫描现有窗口
-/*     for ahk_id in WinGetList("ahk_exe " exe) {
-        ; 排除无效窗口
-        if !WinGetTitle(ahk_id)
-            continue
-
-        ;~ url := GetChromeURL(ahk_id)
-
-        url := 111
-
-
-MsgBox 222 url
-        ; 精准匹配 URL
-        if url && InStr(url, targetURL) {
-            if WinActive("ahk_id " ahk_id) {
-                WinMinimize("ahk_id " ahk_id)
-            } else {
-                WinActivate("ahk_id " ahk_id)
-            }
-            return
-        }
-    } */
-
-
     ; 2️找不到 → 启动 App
-    ;~ Run APP_DIR "\" app["name"] ".lnk"
-
-
-    /* key := app["aumid"]
-    ; 1️如果已有缓存窗口
-    if hwndCache.Has(key) {
-        ahk_id := hwndCache[key]
-        if (ahk_id && WinExist("ahk_id " ahk_id)) {
-            ; 这是 Clash Verge 程序
-            if WinActive("ahk_id " ahk_id) {
-                WinMinimize("ahk_id " ahk_id)
-            } else {
-                WinActivate("ahk_id " ahk_id)
-            }
-            return
-        } else {
-            hwndCache.Delete(key)
-        }
-    } else {
-        ; 2️查找现有窗口
-        for hwnd in WinGetList("ahk_exe " exe) {
-            ; 排除空标题 / 后台进程
-            title := WinGetTitle(hwnd)
-            if !title
-                continue
-
-            ; 可选：URL / 标题关键词 / App 名
-            if InStr(title, app["name"]) {
-
-                hwndCache[key] := hwnd
-                ToolTip  111 hwndCache[key]
-                WinActivate("ahk_id " hwnd)
-                return
-            }
-        }
-
-        ; 3️启动 App
-        Run APP_DIR "\" app["name"] ".lnk"
-
-        ; 4️延迟捕获新窗口
-        SetTimer(() => CaptureNewWindow(app, hwndCache), -500)
-    }
-    */
-
-
-
-
-
-
-}
-
-CaptureNewWindow(app, hwndCache) {
-    exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
-    key := app["aumid"]
-
-    for hwnd in WinGetList("ahk_exe " exe) {
-        ; 排除空标题 / 后台进程
-        title := WinGetTitle(hwnd)
-        if !title
-            continue
-
-        ; 可选：URL / 标题关键词 / App 名
-        if InStr(title, app["name"]) {
-            hwndCache[key] := hwnd
-            ToolTip  222 hwndCache[key]
-            break
-        }
-    }
-}
-;~ global UIA
-;~ UIA := UIA_Interface()
-EnsureUIA() {
-    static uia := 0
-    if !uia
-        uia := UIA()
-    return uia
-}
-
-InitUIA() {
-    static uia := 0
-    if !uia
-        uia := UIA()
-    return uia
-}
-
-
-
-GetBrowserURL(hwnd) {
-        try {
-        win := UIA.Element(UIA.ElementFromHandle(hwnd))
-        for edit in win.FindAll({ Type: UIA.ControlType.Edit }) {
-            val := ""
-            try val := edit.Value
-            if val && RegExMatch(val, "i)^(https?|edge|chrome)://")
-                return val
-        }
-    }
-    catch {
-    }
-    return ""
+    Run APP_DIR "\" app["name"] ".lnk"
 }
 
 
