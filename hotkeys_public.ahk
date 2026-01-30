@@ -12,6 +12,7 @@
 :o:log::console.log()
 :*:tr0::truncate -s 0
 :*:ord::ORDER BY update_time desc
+:*:chcp1::chcp 65001
 
 ;~ sql事务
 :*:st1::
