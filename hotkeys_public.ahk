@@ -2,12 +2,12 @@
 :o:ss1::ss -ltnp | grep :
 :o:scp1::scp -r -P 22 /etc/redis.conf root@8.148.254.178:/deploy/
 :o:mvn1::mvn clean package -DskipTests
-:o:alt1::ALTER TABLE table_name MODIFY COLUMN col_name VARCHAR(50) DEFAULT NULL;
-:o:alt2::ALTER TABLE table_name ADD COLUMN col_name VARCHAR(50) DEFAULT NULL;
-:o:alt3::ALTER TABLE table_name CHANGE old_name new_name VARCHAR(50) DEFAULT NULL;
-:o:sel1::SELECT * FROM table_name
-:o:sel2::SELECT * FROM table_name where col_name = ''
-:o:show1::SHOW CREATE TABLE table_name
+:o:alt1::ALTER TABLE   MODIFY COLUMN col_name VARCHAR(50) DEFAULT NULL;
+:o:alt2::ALTER TABLE   ADD COLUMN col_name VARCHAR(50) DEFAULT NULL;
+:o:alt3::ALTER TABLE   CHANGE old_name new_name VARCHAR(50) DEFAULT NULL;
+:o:sel1::SELECT * FROM
+:o:sel2::SELECT * FROM   where col_name = ''
+:o:show1::SHOW CREATE TABLE
 :o:cre1::CREATE UNIQUE INDEX `uk_group_code` ON lms_group (code) USING BTREE
 :o:log::console.log()
 :*:tr0::truncate -s 0

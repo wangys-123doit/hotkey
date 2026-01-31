@@ -15,11 +15,38 @@ if FileExist(A_ScriptDir "\hotkeys_private.ahk") {
 }
 ;~ ; #:Win,ctrl:^,shift:+,alt:! left左键：<,right右键：>
 ;~ #Include RunRadiator.ahk
-;~ 脚本内强制提权,让 AHK 也以管理员运行
+
+
+; 1. 权限自提升与任务注册逻辑
 if !A_IsAdmin {
-    Run('*RunAs "' A_ScriptFullPath '"')
-    ExitApp
+    try {
+        ; 尝试提权运行当前脚本
+        Run('*RunAs "' A_ScriptFullPath '"')
+    } catch {
+        MsgBox("错误：脚本必须以管理员权限运行才能修改系统任务。", "权限受限", 16)
+    }
+    ExitApp()
 }
+
+; 此时已是管理员权限，检查文件标记判断是否需要注册任务计划
+;~ 用户配置文件
+configPath := A_ScriptDir "\config.ini"
+isTaskCreated := IniRead(configPath, "Setup", "TaskCreated", "0")
+
+if (isTaskCreated == "0") {
+    taskName := "AutoRunHotkeyTask"
+    ; 构造创建任务的命令：登录时以最高权限运行，且不受电源限制
+    createTaskCmd := 'schtasks /create /tn "' taskName '" /tr "\"' A_AhkPath '\" \"' A_ScriptFullPath '\"" /sc onlogon /rl highest /f'
+
+    try {
+        RunWait(createTaskCmd, , "Hide")
+        IniWrite("1", configPath, "Setup", "TaskCreated")
+        ;~ MsgBox("自启任务已成功注册！下次开机脚本将自动以管理员权限运行。", "注册成功", 64)
+    } catch as e {
+        MsgBox("任务计划注册失败：`n" e.Message, "系统错误", 16)
+    }
+}
+
 
 global x86ProgramFilesDir := EnvGet("ProgramFiles(x86)")
 
@@ -1269,13 +1296,6 @@ HandleAppHotkey(hotkey) {
     }
 }
 
-;~ !`::Send "#{Space}"
-;~ ; Alt + ` → 系统切换输入法（最稳）
-!`::{
-    SendEvent "{LWin down}{Space}{LWin up}"
-}
-
-
 ^#s::
 {
 	ahk_exe := "ApplicationFrameHost.exe"
@@ -1442,6 +1462,51 @@ showAppListView(ahk_class) {
 SC137::
 RAlt Up:: {
     SendEvent "{LWin Down}2{LWin Up}"
+    ; 1. 强杀 Chrome，确保 Session 彻底结束/* /*
+    /* if ProcessExist("chrome.exe") {
+        ProcessClose("chrome.exe")
+        ToolTip("正在终止 Chrome 进程...")
+        Sleep(1000)
+    }
+
+    ; 2. 核心路径定义
+    chromePath := "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    userDataDir := EnvGet("LocalAppData") . "\Google\Chrome\User Data"
+    localStateFile := userDataDir . "\Local State"
+
+    ; 3. [底层操作] 尝试通过正则修改 Local State 文件的国家码
+    ; 即使 IP 变了，Chrome 可能会缓存上次的 countryid
+    try {
+        if FileExist(localStateFile) {
+            content := FileRead(localStateFile)
+            ; 将 "variations_country":"CN" 替换为 "US"
+            newContent := RegExReplace(content, '"variations_country":"[A-Z]{2}"', '"variations_country":"US"')
+            if (content !== newContent) {
+                FileDelete(localStateFile)
+                FileAppend(newContent, localStateFile)
+                ToolTip("已修正 Local State 地区...")
+                Sleep(500)
+            }
+        }
+    } catch as e {
+        ; 文件可能被锁定，跳过，依赖命令行覆盖
+    }
+
+    ; 4. 构造启动参数 (这是核心)
+    ; --disable-quic: 阻断 UDP 泄露 (关键!)
+    ; --variations-server-url: 甚至可以尝试屏蔽变体服务器(可选，这里暂不使用)
+    ; --optimization-guide-service-api-key: 这一步通常由内部处理，不需手动
+    params := " --args"
+            . " --lang=en-US"
+            . " --disable-quic"
+            . " --country=US"
+            . " --reset-variation-state" ; 强制重新握手获取 Seed
+            . " --enable-features=OptimizationGuideModelDownloading,OptimizationGuideOnDeviceModel"
+
+    ToolTip("正在以 AI 增强模式启动 Chrome...")
+    Run(chromePath . params) */ */ */
+
+    ;~ Run('"C:\Program Files\Google\Chrome\Application\chrome.exe" --variations-override-country=us')
 }
 ;~ LWin & d:: SendEvent "{LWin Down}1{LWin Up}"
 
@@ -1488,6 +1553,7 @@ RAlt Up:: {
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
+
  ; 微信
 #w::
 {
@@ -1496,6 +1562,8 @@ RAlt Up:: {
     APP_PATH := D_Programs "\Tencent\Weixin\Weixin.exe"
 
     ToggleWindow2(ahk_exe, WinTitle, APP_PATH)
+    ; 确保 Win 键状态被释放
+    KeyWait "w"
 }
  ; 微信公众号
 #x::
@@ -1762,10 +1830,10 @@ BuildBrowserCache() {
 
 			; 优先尝试 UIA 属性获取，若失败则用 JS 保底
             url := cUIA.GetCurrentURL(false)
-            /* if (url == "" || url == "https://") {
+            if (url == "" || url == "https://") {
                 url := cUIA.JSExecute("window.location.href")
             }
-            */
+
 
             url := Trim(url, " `"")
             if (InStr(url, "https://chatgpt.com")) {
@@ -1829,60 +1897,80 @@ ActivateApp(app) {
 
 #f12::
 {
-; 1. 获取微信主窗口
-try {
-    wechatWin := UIA.ElementFromHandle("ahk_exe WeChatAppEx.exe")
-    wechatWin.SetFocus() ; 必须激活窗口，否则右键可能无效
-} catch {
-    MsgBox "未找到微信窗口"
-    ExitApp
+    ; 1. 获取微信主窗口
+    try {
+        wechatWin := UIA.ElementFromHandle("ahk_exe WeChatAppEx.exe")
+        wechatWin.SetFocus() ; 必须激活窗口，否则右键可能无效
+    } catch {
+        MsgBox "未找到微信窗口"
+        ExitApp
+    }
+
+    ; 2. 获取所有文章选项卡 (TabItem)
+    try {
+        tabs := wechatWin.FindElements({Type: 50019}) ; 50019 = TabItem
+    } catch {
+        MsgBox "未找到选项卡"
+        ExitApp
+    }
+
+    if (tabs.Length == 0) {
+        MsgBox "当前没有打开的文章标签页"
+        ExitApp
+    }
+
+    ;~ results := "抓取结果：`n----------------`n"
+
+    ; 3. 遍历每个标签页并执行“右键复制”
+    for item in tabs {
+        title := item.Name
+        if (title == "")
+            continue
+
+        ; 调用自定义函数获取 URL
+        url := GetUrlByRightClick(item)
+
+        ; 拼接 Markdown 格式，并在末尾添加两个换行以确保在 Obsidian 中清晰分隔
+        ; 在循环内部修改为：
+        ; title 和 url 后面加两个空格再加换行，这是 Markdown 强制换行的标准
+        content .= "`n[" . title . "](" . url . ")`n"
+    }
+
+    ; 添加笔记到obsidian
+    parentDir := "微信公众号文章" ; 目录名
+    noteName := FormatTime(, "yyyy-MM-dd") ; 文件名
+    AddNoteToObsidian(parentDir,noteName,content)
+
 }
 
-; 2. 获取所有文章选项卡 (TabItem)
-try {
-    tabs := wechatWin.FindElements({Type: 50019}) ; 50019 = TabItem
-} catch {
-    MsgBox "未找到选项卡"
-    ExitApp
+; 添加笔记到obsidian
+; @param parentDir：目录名
+; @param noteName：文件名
+; @param content：文件内容
+AddNoteToObsidian(parentDir,noteName,content) {
+    ; 基础配置
+    DBName := "Lifein" ; Obsidian数据库名
+    ; 编码路径：微信公众号文章/2026-01-28
+    fullPath := parentDir "/" noteName
+
+    ; 构造 URI (append 参数表示追加)
+    ; 如果文件不存在会新建，存在则追加
+    obsUri := "obsidian://new?vault=" DBName "&file=" EncodeURL(fullPath) "&content=" EncodeURL("`n" content) "&append=true"
+
+    ; 执行
+    Run(obsUri)
 }
 
-if (tabs.Length == 0) {
-    MsgBox "当前没有打开的文章标签页"
-    ExitApp
-}
+;~ !`::Send "#{Space}"
+;~ ; Alt + ` → 系统切换输入法（最稳）
+!`::{
+    ;~ SendEvent "{LWin down}{Space}{LWin up}"
 
-;~ results := "抓取结果：`n----------------`n"
-
-; 3. 遍历每个标签页并执行“右键复制”
-for item in tabs {
-    title := item.Name
-    if (title == "")
-        continue
-
-    ; 调用自定义函数获取 URL
-    url := GetUrlByRightClick(item)
-
-    ; 拼接 Markdown 格式，并在末尾添加两个换行以确保在 Obsidian 中清晰分隔
-	; 在循环内部修改为：
-	; title 和 url 后面加两个空格再加换行，这是 Markdown 强制换行的标准
-	allLinksText .= "`n[" . title . "](" . url . ")`n"
-}
-
-; 基础配置
-DBName := "Lifein" ; Obsidian数据库名
-parentDir := "微信公众号文章" ; 目录名
-noteName := FormatTime(, "yyyy-MM-dd") ; 文件名
-;~ noteName := password
-
-; 编码路径：微信公众号文章/2026-01-28
-fullPath := parentDir "/" noteName
-
-; 构造 URI (append 参数表示追加)
-; 如果文件不存在会新建，存在则追加
-obsUri := "obsidian://new?vault=" DBName "&file=" EncodeURL(fullPath) "&content=" EncodeURL("`n" allLinksText) "&append=true"
-
-; 执行
-Run(obsUri)
+    ; 添加笔记到obsidian
+    parentDir := "笔记" ; 目录名
+    noteName := FormatTime(, "yyyy-MM-dd") ; 文件名
+    ;~ content 为笔记内容
+    AddNoteToObsidian(parentDir,noteName,A_Clipboard)
 
 }
 
@@ -1909,6 +1997,4 @@ GetUrlByRightClick(uiElement) {
     }
     return "未获取到链接"
 }
-
-
 
