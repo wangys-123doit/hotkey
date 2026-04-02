@@ -5,13 +5,24 @@
 :o:alt1::ALTER TABLE   MODIFY COLUMN col_name VARCHAR(50) DEFAULT NULL;
 :o:alt2::ALTER TABLE   ADD COLUMN col_name VARCHAR(50) DEFAULT NULL;
 :o:alt3::ALTER TABLE   CHANGE old_name new_name VARCHAR(50) DEFAULT NULL;
-:o:sel1::SELECT * FROM
+:o:updatej::
+{
+    SendText "-- UPDATE ... JOIN ... SET语句更新主表字段`n"
+    SendText "UPDATE lms_group_user gu`n"
+    SendText "JOIN lms_group g ON gu.group_id = g.id`n"
+    SendText "SET gu.group_name = g.group_name`n"
+    SendText "WHERE gu.group_name IS NULL`n"
+    SendText "AND g.del_flag = '0';"
+}
+
+;~ 末尾添加反引号 ` 转义空格，会强制保留这个空格
+:o:sel1::SELECT * FROM `
 :o:sel2::SELECT * FROM   where col_name = ''
-:o:show1::SHOW CREATE TABLE
+:o:show1::SHOW CREATE TABLE `
 :o:cre1::CREATE UNIQUE INDEX `uk_group_code` ON lms_group (code) USING BTREE
 :o:log::console.log()
 :*:tr0::truncate -s 0
-:*:ord::ORDER BY update_time desc
+:o:ord::ORDER BY update_time desc
 :*:chcp1::chcp 65001
 
 ;~ sql事务

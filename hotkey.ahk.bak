@@ -9,6 +9,7 @@
 SetCapsLockState "AlwaysOff"
 
 #Include hotkeys_public.ahk
+#Include OpenControllerFromNetwork.ahk
 ; 如果文件存在才加载
 if FileExist(A_ScriptDir "\hotkeys_private.ahk") {
     #Include hotkeys_private.ahk
@@ -693,8 +694,70 @@ LWin & z::
 	APP_PATH := "D:\Obsidian\Obsidian.exe"
     ToggleWindow(ahk_exe, APP_PATH)
 }
+class ScriptLifecycle
+{
+    static ENV_KEY := "AHK_SCRIPT_RELOAD"
 
-^!r::Reload  ; Ctrl+Alt+R 快捷键会重新加载脚本
+    static reloadHooks := []
+    static startHooks := []
+    static exitHooks := []
+
+    static Init()
+    {
+        reload := EnvGet(this.ENV_KEY)
+
+        if (reload = "1")
+        {
+            EnvSet(this.ENV_KEY, "")
+            this.RunHooks(this.reloadHooks)
+        }
+        else
+        {
+            this.RunHooks(this.startHooks)
+        }
+
+        OnExit(ObjBindMethod(this, "HandleExit"))
+    }
+
+    static Reload()
+    {
+        EnvSet(this.ENV_KEY, "1")
+        Reload()
+    }
+
+    static RegisterReload(fn)
+    {
+        this.reloadHooks.Push(fn)
+    }
+
+    static RegisterStart(fn)
+    {
+        this.startHooks.Push(fn)
+    }
+
+    static RegisterExit(fn)
+    {
+        this.exitHooks.Push(fn)
+    }
+
+    static RunHooks(list)
+    {
+        for fn in list
+            fn.Call()
+    }
+
+    static HandleExit(reason, code)
+    {
+        for fn in this.exitHooks
+            fn.Call(reason, code)
+    }
+}
+global hwndCache := Map()
+ScriptLifecycle.RegisterReload(BuildBrowserCache)
+
+ScriptLifecycle.Init()
+
+^!r::ScriptLifecycle.Reload()
 
 GroupAdd "ShellGroup", "ahk_exe mintty.exe"
 GroupAdd "ShellGroup", "ahk_exe Xshell.exe"
@@ -702,7 +765,7 @@ GroupAdd "ShellGroup", "ahk_exe Xshell.exe"
 ; ~修饰符的作用：1.​不阻止默认按键功能2.适用于需要保留原按键功能的情况
 ; 适用场景为在按键原有功能的基础上，额外执行某些操作​
 ; 复制热键
-;~ CapsLock::
+CapsLock::
 ~SC163:: ;Fn
 {
     if WinActive("ahk_group ShellGroup") {
@@ -744,6 +807,7 @@ CapsLock::
 LCtrl & CapsLock:: ; Lctrl+CapsLock
 ~LCtrl & SC163:: ;Lctrl+Fn
 ~LButton & CapsLock:: ;鼠标左键+fn键
+~MButton:: ;鼠标中键
 {
     if WinActive("ahk_group ShellGroup") {
         SendEvent "{Shift Down}{Insert}{Shift Up}"
@@ -753,16 +817,13 @@ LCtrl & CapsLock:: ; Lctrl+CapsLock
 }
 
 
-global doubleClickInterval := 180 ; 双击判断的时间间隔（毫秒）
+/* global doubleClickInterval := 180 ; 双击判断的时间间隔（毫秒）
 global capsPending := false ; 单击行为必须延迟执行，直到确认不是双击
 
 
 
 $CapsLock::
 {
-/*     if GetKeyState("LWin","P") || GetKeyState("RWin","P") {
-        return
-    } */
     global doubleClickInterval
     global capsPending
     if (capsPending) {
@@ -773,11 +834,6 @@ $CapsLock::
         if WinActive("ahk_group ShellGroup") {
             SendInput "{Shift Down}{Insert}{Shift Up}"
         } else {
-            ;  临时屏蔽 Win
-/*             BlockInput "On"
-            ;~ SendEvent "^c"
-            SendInput "{Ctrl Down}v{Ctrl Up}"
-            BlockInput "Off" */
             SendInput "{Ctrl Down}v{Ctrl Up}"
 
         }
@@ -791,9 +847,9 @@ $CapsLock::
             ;  等 CapsLock 彻底释放
         KeyWait "CapsLock"
 
-}
+} */
 ;~ Caps键单击
-CapsSingle() {
+/* CapsSingle() {
     global capsPending
     if (!capsPending)
         return
@@ -811,11 +867,6 @@ CapsSingle() {
     if WinActive("ahk_group ShellGroup") {
         SendInput "{Ctrl Down}{Insert}{Ctrl Up}"
     } else {
-        ;  临时屏蔽 Win
-/*         BlockInput "On"
-        ;~ SendEvent "^c"
-        SendInput "{Ctrl Down}c{Ctrl Up}"
-        BlockInput "Off" */
         SendInput "{Ctrl Down}c{Ctrl Up}"
 
     }
@@ -824,7 +875,7 @@ CapsSingle() {
        A_Clipboard := backup
        return
     }
-}
+} */
 
 $!CapsLock::
 {
@@ -1407,7 +1458,7 @@ showAppListView(ahk_class) {
 #F1::
 {
 	ahk_exe := "snipaste.exe"
-	APP_PATH := "C:\Users\X1\AppData\Local\Microsoft\WindowsApps\Snipaste.exe"
+	APP_PATH := "D:\software\Snipaste\Snipaste.exe"
 
     ToggleWindow(ahk_exe, APP_PATH)
 
@@ -1441,14 +1492,85 @@ showAppListView(ahk_class) {
     ToggleWindow(ahk_exe, APP_PATH)
 }
 
-; win+b打开vscode
+; ctrl+space打开vscode
 ^space::
 {
 	ahk_exe := "Code.exe"
 	APP_PATH := A_Programs "\Visual Studio Code\Visual Studio Code.lnk"
 
-    ToggleWindow(ahk_exe, APP_PATH)
+    openVSCode(ahk_exe, APP_PATH)
 
+}
+
+
+openVSCode(ahkExe, appPath, workspace := "") {
+    hwnd := WinExist("ahk_exe " ahkExe)
+    if hwnd {
+        if WinActive("ahk_id " hwnd) {
+            WinMinimize("ahk_id " hwnd)
+        } else {
+            WinShow("ahk_id " hwnd)
+            WinActivate("ahk_id " hwnd)
+        }
+        return
+    }
+
+    LaunchVSCodeAsStandardUser(appPath, workspace)
+
+    ; 启动后尝试激活
+    if WinWait("ahk_exe " ahkExe, , 6) {
+        WinActivate("ahk_exe " ahkExe)
+    }
+}
+
+LaunchVSCodeAsStandardUser(appPath, workspace := "") {
+    try {
+        if !FileExist(appPath) {
+            throw Error("VS Code 路径不存在: " appPath)
+        }
+
+        args := "--reuse-window"
+        if (workspace != "") {
+            args .= " " QuoteArg(workspace)
+        }
+
+        ; 获取 explorer.exe 句柄（关键：它是普通权限）
+        explorerHwnd := WinExist("ahk_class CabinetWClass")
+        if !explorerHwnd {
+            explorerHwnd := WinExist("ahk_class ExploreWClass")
+        }
+
+        if explorerHwnd {
+            shellWindows := ComObject("Shell.Application").Windows
+            for window in shellWindows {
+                try {
+                    if (window.HWND = explorerHwnd) {
+                        window.Document.Application.ShellExecute(
+                            appPath,
+                            args,
+                            "",
+                            "open",
+                            1
+                        )
+                        return
+                    }
+                } catch {
+                    continue
+                }
+            }
+        }
+
+        ; fallback（兜底）
+        Run(appPath " " args)
+
+    } catch {
+        MsgBox "启动 VSCode 失败:`n" e.Message, "错误", "Iconx"
+    }
+}
+
+QuoteArg(s) {
+    ; Windows 参数安全引用
+    return '"' StrReplace(s, '"', '\"') '"'
 }
 
 ; 快捷键 Win+T 切换置顶状态
@@ -1460,7 +1582,7 @@ showAppListView(ahk_class) {
 }
 ; Prtsc键或者LAlt & space都能打开chrome
 SC137::
-RAlt Up:: {
+RCtrl Up:: {
     SendEvent "{LWin Down}2{LWin Up}"
     ; 1. 强杀 Chrome，确保 Session 彻底结束/* /*
     /* if ProcessExist("chrome.exe") {
@@ -1555,16 +1677,27 @@ RAlt Up:: {
 }
 
  ; 微信
-#w::
+ #w::
 {
     ahk_exe := "Weixin.exe"
     WinTitle := "Weixin"
-    APP_PATH := D_Programs "\Tencent\Weixin\Weixin.exe"
+    APP_PATH := "D:\Program Files\Tencent\Weixin\Weixin.exe"
 
-    ToggleWindow2(ahk_exe, WinTitle, APP_PATH)
-    ; 确保 Win 键状态被释放
-    KeyWait "w"
+     if WinExist("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
+        ; 检查窗口是否已激活
+        if WinActive("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
+            WinMinimize
+        } else {
+            WinActivate
+        }
+    } else {
+        Run APP_PATH
+    }
+    ;~ ToggleWindow2(ahk_exe, WinTitle, APP_PATH)
 }
+
+
+
  ; 微信公众号
 #x::
 {
@@ -1808,8 +1941,12 @@ for app in CONFIG["apps"] {
 BindActivateApp(app) {
     return (*) => ActivateApp(app)
 }
-global hwndCache := Map()
-BuildBrowserCache()
+
+; Win + 0热键打开chrome app
+#0::
+{
+	BuildBrowserCache()
+}
 BuildBrowserCache() {
     global hwndCache
     hwndCache.Clear()
@@ -1817,12 +1954,14 @@ BuildBrowserCache() {
     ; 获取所有 chrome.exe 句柄
     ids := WinGetList("ahk_exe chrome.exe")
 
+
     for hwnd in ids {
         ; 1. 过滤掉没有标题的隐藏窗口（Chrome 后台进程）
         title := WinGetTitle("ahk_id " hwnd)
         if (title == "")
             continue
 
+        ;~ ToolTip title
         ; 2. 识别是否为 App 窗口
         try {
             ; 很多版本的 UIA_Browser 在创建时会自动 WinActivate
@@ -1894,6 +2033,8 @@ ActivateApp(app) {
     ; 2️找不到 → 启动 App
     Run APP_DIR "\" app["name"] ".lnk"
 }
+
+
 
 #f12::
 {
@@ -1998,3 +2139,42 @@ GetUrlByRightClick(uiElement) {
     return "未获取到链接"
 }
 
+
+; Ctrl + alt + C 复制 Network Request URL
+^!c::
+{
+    try
+    {
+        if !WinActive("ahk_exe chrome.exe")
+            return
+
+        hwnd := WinActive("A")
+
+        root := UIA.ElementFromHandle(hwnd)
+
+        ; ControlType = DataItem (Network row)
+        cond := UIA.CreatePropertyCondition(
+            UIA.ControlTypePropertyId,
+            UIA.ControlType.DataItem
+        )
+
+        rows := root.FindAll(UIA.TreeScope_Subtree, cond)
+
+        if rows.Length = 0
+            throw Error("No DataItem rows found")
+
+        ; 默认使用第一个 row（可扩展选中行）
+        row := rows[1]
+
+        row.Click("right")
+
+        Sleep 80
+        Send "c"
+        Sleep 50
+        Send "u"
+    }
+    catch Error as err
+    {
+        MsgBox "UIA copy url failed:`n" err.Message
+    }
+}
