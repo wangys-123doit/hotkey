@@ -10,6 +10,7 @@ SetCapsLockState "AlwaysOff"
 
 #Include hotkeys_public.ahk
 #Include OpenControllerFromNetwork.ahk
+#Include rdp.ahk
 ; 如果文件存在才加载
 if FileExist(A_ScriptDir "\hotkeys_private.ahk") {
     #Include hotkeys_private.ahk
@@ -600,17 +601,12 @@ LWin & z::
         Run("schtasks /run /tn " taskName,"","Hide")
     }
 }
-; Win + f8热键打开
+; Win + f8热键打开localsend
 #F8::
 {
-
-
-
-	;~ ahk_exe := "clash-verge.exe"
-	;~ APP_PATH := A_ProgramFiles "\Clash Verge\clash-verge.exe"
-
-    ;~ ToggleWindow(ahk_exe, APP_PATH)
-
+    ahk_exe := "localsend_app.exe"
+    APP_PATH := A_Programs "\LocalSend.lnk"
+    ToggleWindow(ahk_exe, APP_PATH)
 }
 
 
@@ -807,12 +803,78 @@ CapsLock::
 LCtrl & CapsLock:: ; Lctrl+CapsLock
 ~LCtrl & SC163:: ;Lctrl+Fn
 ~LButton & CapsLock:: ;鼠标左键+fn键
+{
+    if WinActive("ahk_group ShellGroup") {
+        SendEvent "{Shift Down}{Insert}{Shift Up}"
+    } else {
+        SendEvent "{Ctrl Down}{v}{Ctrl Up}"
+    }
+}
+; ==============================
+; MButton 智能处理
+; 判断是否是终端环境
+; ==============================
+isTerminal() {
+    return WinActive("ahk_exe mintty.exe")  ; Git Bash
+        || WinActive("ahk_exe Xshell.exe")
+        || WinActive("ahk_exe WindowsTerminal.exe")
+        || WinActive("ahk_exe wezterm.exe")
+}
+
+#HotIf !isTerminal()
 ~MButton:: ;鼠标中键
 {
     if WinActive("ahk_group ShellGroup") {
         SendEvent "{Shift Down}{Insert}{Shift Up}"
     } else {
         SendEvent "{Ctrl Down}{v}{Ctrl Up}"
+    }
+}
+#HotIf
+
+
+/**
+ * 1. Background: 全局区域仅存放静态配置
+ */
+readonly CONTROL_PATH := "D:\software\controlmymonitor\ControlMyMonitor.exe"
+readonly INPUT_SELECT_VCP := 60
+
+/**
+ * 2. Core Framework: 业务逻辑封装在函数内
+ * 采用“单点进入”原则，避免函数依赖隐式全局变量
+ */
+SwitchMonitor(targetValue) {
+    ; Implementation Details: 局部变量只在执行时存在
+    local cmd := ""
+
+    ; 即使使用了全局常量，函数内部逻辑也是封闭的
+    if !FileExist(CONTROL_PATH) {
+        throw Error("Path not found: " . CONTROL_PATH)
+    }
+
+    cmd := Format('"{1}" /SetValue Primary {2} {3}', CONTROL_PATH, INPUT_SELECT_VCP, targetValue)
+
+    ; Optimization: 记录日志或执行
+    return RunWait(cmd, , "Hide")
+}
+
+/**
+ * 3. 触发层
+ */
+#[:: {
+    try {
+        SwitchMonitor(17) ; 通过参数传递，而非在函数内直接引用易变全局变量
+    } catch Error as e {
+        ; Logging recommendation: 关键路径错误捕获
+        MsgBox(e.Message)
+    }
+}
+#]:: {
+    try {
+        SwitchMonitor(15) ; 通过参数传递，而非在函数内直接引用易变全局变量
+    } catch Error as e {
+        ; Logging recommendation: 关键路径错误捕获
+        MsgBox(e.Message)
     }
 }
 
@@ -1728,6 +1790,15 @@ RCtrl Up:: {
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
+;~ 打开桌面远程连接
+;~ #\::
+;~ {
+    ;~ ahk_exe := "mstsc.exe"
+    ;~ APP_PROTOCOL := "mstsc.exe /v:DESKTOP-ABC"
+
+
+    ;~ ToggleWindow(ahk_exe, APP_PATH)
+;~ }
 
 #!g::
 {
