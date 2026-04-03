@@ -1,0 +1,89 @@
+#Requires AutoHotkey v2.0
+
+; ============================================
+; 配置区
+; ============================================
+
+class RDPConfig {
+    static baseDir := "C:\Users\X1\OneDrive\文档\"   ; .rdp 文件目录
+
+    static servers := Map(
+        "dev", "Default.rdp",
+        "prod", "prod.rdp"
+    )
+}
+
+; ============================================
+; 核心管理器
+; ============================================
+
+class RDPManager {
+
+    static connect(name) {
+        try {
+            ; ---------- 1. 检查 mstsc ----------
+            mstscPath := A_WinDir "\System32\mstsc.exe"
+            if !FileExist(mstscPath) {
+                throw Error("mstsc.exe not found: " mstscPath)
+            }
+
+            ; ---------- 2. 校验配置 ----------
+            if !RDPConfig.servers.Has(name) {
+                throw Error("RDP config not found: " name)
+            }
+
+            rdpFile := RDPConfig.baseDir "\" RDPConfig.servers[name]
+
+            if !FileExist(rdpFile) {
+                throw Error("RDP file not found: " rdpFile)
+            }
+
+            ; ---------- 3. 防重复启动 ----------
+            if this.isRDPActive(rdpFile) {
+                this.log("RDP already active → " name)
+                this.activateRDPWindow()
+                return
+            }
+
+            ; ---------- 4. 启动 ----------
+            Run '"' rdpFile '"'
+
+            this.log("RDP launched → " name)
+
+        } catch e {
+            this.log("ERROR: " e.Message)
+            MsgBox "RDP Error:`n" e.Message
+        }
+    }
+
+    ; 判断是否已有 RDP 窗口
+    static isRDPActive(rdpFile) {
+        ; 模糊匹配窗口标题（不同系统语言会不同）
+        return WinExist("ahk_exe mstsc.exe")
+    }
+
+    ; 激活已有窗口
+    static activateRDPWindow() {
+        hwnd := WinExist("ahk_exe mstsc.exe")
+        if hwnd {
+            WinActivate hwnd
+        }
+    }
+
+    ; 日志记录
+    static log(msg) {
+        logFile := A_ScriptDir "\rdp.log"
+        time := FormatTime(, "yyyy-MM-dd HH:mm:ss")
+        FileAppend "[" time "] " msg "`n", logFile, "UTF-8"
+    }
+}
+
+; ============================================
+; 热键绑定
+; ============================================
+
+; Ctrl + Alt + D → dev
+#\::RDPManager.connect("dev")
+
+; Ctrl + Alt + P → prod
+;~ ^!p::RDPManager.connect("prod")
