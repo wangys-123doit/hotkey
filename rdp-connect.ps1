@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param (
     [Parameter(Mandatory=$false)]
-    # [string]$TargetHost = "X1"
-    [string]$TargetHost = "M1"
+    [string]$TargetHost = "X1"
+    # [string]$TargetHost = "M1"
 )
 
 process {
