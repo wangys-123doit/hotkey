@@ -873,7 +873,7 @@ GetMonitorTargetByHost(hostname, defaultValue) {
 }
 
 /**
- * 3. 触发层
+ * 3. 根据主机名获取输入源编号并切换主机显示器
  */
 #[:: {
     try {
