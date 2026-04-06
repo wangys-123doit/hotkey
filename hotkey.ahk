@@ -834,12 +834,19 @@ isTerminal() {
  */
 global CONTROL_PATH := "D:\software\controlmymonitor\ControlMyMonitor.exe"
 global INPUT_SELECT_VCP := 60
+; 按主机名配置不同机器的输入源编号
+; key 使用大写主机名（A_ComputerName）
+global HOST_MONITOR_MAP := Map(
+    "X1", 17,
+    "17", 27
+)
 
 /**
  * 2. Core Framework: 业务逻辑封装在函数内
  * 采用“单点进入”原则，避免函数依赖隐式全局变量
+ * input_source: 输入源编号，17 代表 DP，27 代表 HDMI，具体值根据实际情况调整
  */
-SwitchMonitor(targetValue) {
+SwitchMonitor(input_source) {
     ; Implementation Details: 局部变量只在执行时存在
     local cmd := ""
 
@@ -848,10 +855,21 @@ SwitchMonitor(targetValue) {
         throw Error("Path not found: " . CONTROL_PATH)
     }
 
-    cmd := Format('"{1}" /SetValue Primary {2} {3}', CONTROL_PATH, INPUT_SELECT_VCP, targetValue)
+    cmd := Format('"{1}" /SetValue Primary {2} {3}', CONTROL_PATH, INPUT_SELECT_VCP, input_source)
 
     ; Optimization: 记录日志或执行
     return RunWait(cmd, , "Hide")
+}
+
+GetMonitorTargetByHost(hostname, defaultValue) {
+    global HOST_MONITOR_MAP
+
+    host := StrUpper(hostname)
+    if HOST_MONITOR_MAP.Has(host) {
+        return HOST_MONITOR_MAP[host]
+    }
+
+    return defaultValue
 }
 
 /**
@@ -859,15 +877,8 @@ SwitchMonitor(targetValue) {
  */
 #[:: {
     try {
-        SwitchMonitor(17) ; 通过参数传递，而非在函数内直接引用易变全局变量
-    } catch Error as e {
-        ; Logging recommendation: 关键路径错误捕获
-        MsgBox(e.Message)
-    }
-}
-#]:: {
-    try {
-        SwitchMonitor(27) ; 通过参数传递，而非在函数内直接引用易变全局变量
+        input_source := GetMonitorTargetByHost(A_ComputerName, 17)
+        SwitchMonitor(input_source)
     } catch Error as e {
         ; Logging recommendation: 关键路径错误捕获
         MsgBox(e.Message)
