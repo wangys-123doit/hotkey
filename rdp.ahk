@@ -150,24 +150,7 @@ class RDPManager {
 
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    Run "powershell -ExecutionPolicy Bypass -File D:\rdp-connect.ps1"
+;~ powershell -ExecutionPolicy Bypass -File "E:\AutoHotKey\hotkey\rdp-connect.ps1"
 
 
 ; Ctrl + Alt + P → prod

@@ -137,15 +137,17 @@ class RDPManager {
 		}
 	} else {
 		exitCode := RunWait('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' . targetScript . '" "X1"', , "Hide")
+		if (exitCode != 0) {
+			MsgBox("PowerShell 执行失败`n退出码: " . exitCode . "`n建议：手动打开 CMD 运行 powershell -File D:\rdp-connect.ps1 以查看环境报错。")
+		} else {
+			ToolTip("X1远程连接成功")
+			SetTimer(() => ToolTip(), -1000)  ; -1000 表示一次性计时器
+			;~ MsgBox("PowerShell 成功执行完成 (ExitCode 0)")
+		}
 	}
 
 
-    if (exitCode != 0) {
-        MsgBox("PowerShell 执行失败`n退出码: " . exitCode . "`n建议：手动打开 CMD 运行 powershell -File D:\rdp-connect.ps1 以查看环境报错。")
-    } else {
-		SetTimer(() => ToolTip("X1远程连接成功"), -1000)  ; -1000 表示一次性计时器
-        ;~ MsgBox("PowerShell 成功执行完成 (ExitCode 0)")
-    }
+
 }
 
 
