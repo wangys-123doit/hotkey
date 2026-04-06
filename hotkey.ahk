@@ -837,8 +837,8 @@ global INPUT_SELECT_VCP := 60
 ; 按主机名配置不同机器的输入源编号
 ; key 使用大写主机名（A_ComputerName）
 global HOST_MONITOR_MAP := Map(
-    "X1", 27,
-    "17", 17
+    "X1", 17,
+    "17", 27
 )
 
 /**
