@@ -95,12 +95,78 @@ class RDPManager {
     }
 }
 
+
+;~ ToggleWindow(ahk_exe, APP_PATH) {
+	;~ if WinExist("ahk_exe " ahk_exe) {
+		;~ ; 检查窗口是否已激活
+		;~ if WinActive("ahk_exe " ahk_exe) {
+			;~ WinMinimize
+		;~ } else {
+			;~ WinActivate
+		;~ }
+	;~ } else {
+		;~ Run APP_PATH
+	;~ }
+;~ }
 ; ============================================
 ; 热键绑定
 ; ============================================
 
 ; #\ → dev
-#\::RDPManager.connect("dev")
+;~ #\::RDPManager.connect("dev")
+#\::
+{
+    targetScript := A_ScriptDir "\rdp-connect.ps1"
+
+    ; 检查文件是否存在
+    if !FileExist(targetScript) {
+        MsgBox("错误: 脚本文件路径不存在 - " . targetScript)
+        return
+    }
+
+    ; 使用 RunWait 运行，ExitCode 为 0 通常代表成功，非 0 为异常
+    ; 显式指定 powershell.exe 的全路径
+	exitCode := ''
+	ahk_exe := "mstsc.exe"
+	if WinExist("ahk_exe " ahk_exe) {
+		; 检查窗口是否已激活
+		if WinActive("ahk_exe " ahk_exe) {
+			WinMinimize
+		} else {
+			WinActivate
+		}
+	} else {
+		exitCode := RunWait('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' . targetScript . '" "X1"', , "Hide")
+	}
+
+
+    if (exitCode != 0) {
+        MsgBox("PowerShell 执行失败`n退出码: " . exitCode . "`n建议：手动打开 CMD 运行 powershell -File D:\rdp-connect.ps1 以查看环境报错。")
+    } else {
+		SetTimer(() => ToolTip("X1远程连接成功"), -1000)  ; -1000 表示一次性计时器
+        ;~ MsgBox("PowerShell 成功执行完成 (ExitCode 0)")
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Run "powershell -ExecutionPolicy Bypass -File D:\rdp-connect.ps1"
+
 
 ; Ctrl + Alt + P → prod
 ;~ ^!p::RDPManager.connect("prod")

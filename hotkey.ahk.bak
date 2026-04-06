@@ -836,8 +836,8 @@ isTerminal() {
 /**
  * 1. Background: 全局区域仅存放静态配置
  */
-readonly CONTROL_PATH := "D:\software\controlmymonitor\ControlMyMonitor.exe"
-readonly INPUT_SELECT_VCP := 60
+global CONTROL_PATH := "D:\software\controlmymonitor\ControlMyMonitor.exe"
+global INPUT_SELECT_VCP := 60
 
 /**
  * 2. Core Framework: 业务逻辑封装在函数内

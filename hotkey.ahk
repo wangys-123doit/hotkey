@@ -11,10 +11,8 @@ SetCapsLockState "AlwaysOff"
 #Include hotkeys_public.ahk
 #Include OpenControllerFromNetwork.ahk
 #Include rdp.ahk
-; 如果文件存在才加载
-if FileExist(A_ScriptDir "\hotkeys_private.ahk") {
-    #Include hotkeys_private.ahk
-}
+; 可选包含：文件不存在时忽略，不会在加载阶段报错
+#Include *i hotkeys_private.ahk
 ;~ ; #:Win,ctrl:^,shift:+,alt:! left左键：<,right右键：>
 ;~ #Include RunRadiator.ahk
 
@@ -525,7 +523,7 @@ LWin & z::
         PostMessage 0x112, 0xF020,,, hwnd
     }
 }
-
+; A_ProgramsCommon := "C:\ProgramData\Microsoft\Windows\Start Menu\Programs"
 ; win+F2打开meeting
 #F2::
 {
@@ -539,9 +537,7 @@ LWin & z::
     ahk_class := "Tauri Window"
     ahk_exe := "clash-verge.exe"
     winTitle := "Clash Verge"
-
-	APP_PATH := A_ProgramFiles "\Clash Verge\clash-verge.exe"
-
+	  APP_PATH := A_ProgramsCommon "\Clash Verge.lnk"
     if WinExist("ahk_exe " ahk_exe) {
         ; 获取主窗口的进程 ID (PID)
         ahk_id := GetMainWindowByExe(ahk_exe,winTitle)
@@ -871,7 +867,7 @@ SwitchMonitor(targetValue) {
 }
 #]:: {
     try {
-        SwitchMonitor(15) ; 通过参数传递，而非在函数内直接引用易变全局变量
+        SwitchMonitor(27) ; 通过参数传递，而非在函数内直接引用易变全局变量
     } catch Error as e {
         ; Logging recommendation: 关键路径错误捕获
         MsgBox(e.Message)
@@ -1511,7 +1507,7 @@ showAppListView(ahk_class) {
 #n::
 {
 	ahk_exe := "notepad++.exe"
-	APP_PATH := D_Programs "\Notepad++\notepad++.exe"
+	APP_PATH := A_ProgramsCommon "\Notepad++.lnk"
 
     ToggleWindow(ahk_exe, APP_PATH)
 
@@ -1704,7 +1700,7 @@ RCtrl Up:: {
     ahk_class := "Tauri Window"
 	ahk_exe := "yuanbao.exe"
 	winTitle := "元宝"
-	APP_PATH := D_Programs "\Tencent\Yuanbao\yuanbao.exe"
+	APP_PATH := A_ProgramsCommon "\元宝\元宝.lnk"
 
     if WinExist("ahk_exe " ahk_exe) {
         ; 获取主窗口的进程 ID (PID)
@@ -1743,7 +1739,7 @@ RCtrl Up:: {
 {
     ahk_exe := "Weixin.exe"
     WinTitle := "Weixin"
-    APP_PATH := "D:\Program Files\Tencent\Weixin\Weixin.exe"
+    APP_PATH := A_ProgramsCommon "\微信\微信.lnk"
 
      if WinExist("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
         ; 检查窗口是否已激活
