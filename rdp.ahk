@@ -112,42 +112,81 @@ class RDPManager {
 ; 热键绑定
 ; ============================================
 
-; #\ → dev
-;~ #\::RDPManager.connect("dev")
+; Win+\：快速直连（最快，不做前置探测）
 #\::
 {
-    targetScript := A_ScriptDir "\rdp-connect.ps1"
+    ToggleOrConnectRDP("fast", "X1")
+}
 
-    ; 检查文件是否存在
+; Ctrl+Win+\：安全探测（DNS + 3389 检测后再连接）
+#^\::
+{
+    ToggleOrConnectRDP("safe", "X1")
+}
+
+ToggleOrConnectRDP(mode := "fast", targetHost := "X1") {
+    ahk_exe := "mstsc.exe"
+
+    if WinExist("ahk_exe " ahk_exe) {
+        if WinActive("ahk_exe " ahk_exe) {
+            WinMinimize
+        } else {
+            WinActivate
+        }
+        return
+    }
+
+    if (mode = "safe") {
+        ConnectRDPByProbe(targetHost)
+    } else {
+        ConnectRDPFast(targetHost)
+    }
+}
+
+ConnectRDPFast(targetHost := "X1") {
+    targetScript := A_ScriptDir "\rdp-connect.ps1"
     if !FileExist(targetScript) {
         MsgBox("错误: 脚本文件路径不存在 - " . targetScript)
         return
     }
 
-    ; 使用 RunWait 运行，ExitCode 为 0 通常代表成功，非 0 为异常
-    ; 显式指定 powershell.exe 的全路径
-	exitCode := ''
-	ahk_exe := "mstsc.exe"
-	if WinExist("ahk_exe " ahk_exe) {
-		; 检查窗口是否已激活
-		if WinActive("ahk_exe " ahk_exe) {
-			WinMinimize
-		} else {
-			WinActivate
-		}
-	} else {
-		exitCode := RunWait('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' . targetScript . '" "X1"', , "Hide")
-		if (exitCode != 0) {
-			MsgBox("PowerShell 执行失败`n退出码: " . exitCode . "`n建议：手动打开 CMD 运行 powershell -File D:\rdp-connect.ps1 以查看环境报错。")
-		} else {
-			ToolTip("X1远程连接成功")
-			SetTimer(() => ToolTip(), -1000)  ; -1000 表示一次性计时器
-			;~ MsgBox("PowerShell 成功执行完成 (ExitCode 0)")
-		}
-	}
+    psExe := A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
+    cmd := '"' psExe '" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' . targetScript . '" "' . targetHost . '" -Mode "fast" -SkipProbe'
+    try {
+        Run(cmd, , "Hide", &psPid)
+    } catch Error as e {
+        WriteRDPLog("mode=fast host=" . targetHost . " launch_failed=" . e.Message)
+        MsgBox("RDP 启动失败: " . e.Message)
+        return
+    }
+    ToolTip("快速直连(仅解析): " . targetHost)
+    SetTimer(() => ToolTip(), -1000)
+}
 
+ConnectRDPByProbe(targetHost := "X1") {
+    targetScript := A_ScriptDir "\rdp-connect.ps1"
+    if !FileExist(targetScript) {
+        MsgBox("错误: 脚本文件路径不存在 - " . targetScript)
+        return
+    }
 
+    psExe := A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
+    cmd := '"' psExe '" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' . targetScript . '" "' . targetHost . '" -Mode "safe"'
+    try {
+        Run(cmd, , "Hide", &psPid)
+    } catch Error as e {
+        WriteRDPLog("mode=safe host=" . targetHost . " launch_failed=" . e.Message)
+        MsgBox("RDP 启动失败: " . e.Message)
+        return
+    }
+    ToolTip("安全探测连接: " . targetHost)
+    SetTimer(() => ToolTip(), -1000)
+}
 
+WriteRDPLog(msg) {
+    logFile := A_ScriptDir "\rdp.log"
+    time := FormatTime(, "yyyy-MM-dd HH:mm:ss")
+    FileAppend("[" . time . "] " . msg . "`n", logFile, "UTF-8")
 }
 
 ;~ powershell -ExecutionPolicy Bypass -File "E:\AutoHotKey\hotkey\rdp-connect.ps1"
