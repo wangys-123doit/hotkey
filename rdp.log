@@ -32,3 +32,4 @@
 [2026-04-03 15:50:53] RDP launched → dev
 [2026-04-03 15:51:44] RDP launched → dev
 >>>>>>> 404614f6144ee29386440ec13c95e6167455ea48
+[2026-04-07 12:35:38] mode=fast host=HOST_NOT_EXIST_123 failed=Failed to resolve IPv4 for host: HOST_NOT_EXIST_123
