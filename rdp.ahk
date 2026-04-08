@@ -6,7 +6,48 @@
 
 global RDP_MINIMIZE_SIGNAL := "__AHK_RDP_MINIMIZE_MSTSC__"
 global g_RdpClipboardSignalBusy := false
-OnClipboardChange(HandleRdpClipboardSignal)
+global g_RdpMinimizeArmedAt := 0
+global g_RdpClipboardCallback := ObjBindMethod(RdpClipboardBridge, "Handle")
+OnClipboardChange(g_RdpClipboardCallback)
+
+class RdpClipboardBridge {
+    static Handle(type) {
+        global RDP_MINIMIZE_SIGNAL, g_RdpClipboardSignalBusy, g_RdpMinimizeArmedAt
+
+        if g_RdpClipboardSignalBusy {
+            return
+        }
+
+        if (type != 1) {
+            return
+        }
+
+        if IsWindowsRemoteSession() {
+            return
+        }
+
+        if !g_RdpMinimizeArmedAt {
+            return
+        }
+
+        if (A_TickCount - g_RdpMinimizeArmedAt > 3000) {
+            g_RdpMinimizeArmedAt := 0
+            return
+        }
+
+        if (A_Clipboard != RDP_MINIMIZE_SIGNAL) {
+            return
+        }
+
+        g_RdpMinimizeArmedAt := 0
+        g_RdpClipboardSignalBusy := true
+        try {
+            MinimizeMstscRootWindow()
+        } finally {
+            g_RdpClipboardSignalBusy := false
+        }
+    }
+}
 
 class RDPConfig {
     static baseDir := "C:\Users\X1\OneDrive\文档\"   ; .rdp 文件目录
@@ -128,11 +169,11 @@ class RDPManager {
     ToggleOrConnectRDP("safe", "X1")
 }
 
-; Ctrl+Alt+M：若当前是远程桌面窗口，则最小化该窗口
-/* ^!m::
+; win+]:若当前是远程桌面窗口，则最小化该窗口
+#]::
 {
-    MinimizeCurrentRDPDesktop()
-} */
+    RequestLocalMstscMinimize()
+}
 
 ; Ctrl+Alt+Shift+M：临时调试当前窗口/根窗口信息
 ^!+m::
@@ -140,58 +181,42 @@ class RDPManager {
     ShowRDPDebugInfo()
 }
 
-MinimizeCurrentRDPDesktop() {
-    RequestLocalMstscMinimize()
-}
-
 RequestLocalMstscMinimize() {
-    global RDP_MINIMIZE_SIGNAL
+    global RDP_MINIMIZE_SIGNAL, g_RdpMinimizeArmedAt
 
     if !IsWindowsRemoteSession() {
-        if MinimizeMstscRootWindow() {
-            return true
-        }
-
-        ToolTip("未找到可最小化的 mstsc 窗口")
-        SetTimer(() => ToolTip(), -1200)
-        return false
-    }
-
-    try {
-        A_Clipboard := RDP_MINIMIZE_SIGNAL
-        ToolTip("已向本机发送最小化请求")
-        SetTimer(() => ToolTip(), -1200)
-        return true
-    } catch Error as e {
-        MsgBox("发送最小化请求失败: " e.Message, "RDP 提示")
-        return false
-    }
-}
-
-HandleRdpClipboardSignal(type) {
-    global RDP_MINIMIZE_SIGNAL, g_RdpClipboardSignalBusy
-
-    if g_RdpClipboardSignalBusy {
+        MinimizeCurrentRDPDesktop()
         return
     }
 
-    if (type != 1) {
+    try {
+        g_RdpMinimizeArmedAt := A_TickCount
+        A_Clipboard := RDP_MINIMIZE_SIGNAL
+        ToolTip("已向本机发送最小化请求")
+        SetTimer(() => ToolTip(), -1200)
+    } catch Error as e {
+        MsgBox("发送最小化请求失败: " e.Message, "RDP 提示")
+    }
+}
+
+MinimizeCurrentRDPDesktop() {
+    hwnd := WinGetID("A")
+    if !hwnd {
+        return
+    }
+
+    if MinimizeMstscRootWindow(hwnd) {
         return
     }
 
     if IsWindowsRemoteSession() {
-        return
-    }
-
-    if (A_Clipboard != RDP_MINIMIZE_SIGNAL) {
-        return
-    }
-
-    g_RdpClipboardSignalBusy := true
-    try {
-        MinimizeMstscRootWindow()
-    } finally {
-        g_RdpClipboardSignalBusy := false
+        MsgBox(
+            "当前脚本运行在远程会话中，但本地 mstsc 客户端窗口不在这个会话里，无法从这里最小化本机 RDP 窗口。`n`n请把脚本运行在本地客户端后再按这个热键。",
+            "RDP 提示"
+        )
+    } else {
+        ToolTip("未找到可最小化的 mstsc 窗口")
+        SetTimer(() => ToolTip(), -1200)
     }
 }
 
@@ -288,8 +313,7 @@ ToggleOrConnectRDP(mode := "fast", targetHost := "X1") {
 
     if WinExist("ahk_exe " ahk_exe) {
         if WinActive("ahk_exe " ahk_exe) {
-            MinimizeCurrentRDPDesktop()
-            ; WinMinimize
+            WinMinimize
         } else {
             WinActivate
         }
