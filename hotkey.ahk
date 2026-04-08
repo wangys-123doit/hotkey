@@ -816,17 +816,33 @@ isTerminal() {
         || WinActive("ahk_exe WindowsTerminal.exe")
         || WinActive("ahk_exe wezterm.exe")
 }
+global g_MButtonLastTick := 0
 
 #HotIf !isTerminal()
-~MButton:: ;鼠标中键
+*~MButton:: ; 仅在可输入光标下触发粘贴，其它场景保留原生中键
 {
-    if WinActive("ahk_group ShellGroup") {
-        SendEvent "{Shift Down}{Insert}{Shift Up}"
+    cursorType := A_Cursor
+    ToolTip 111 . " - " . cursorType    
+    SetTimer(ToolTip, -1000)  ; 1秒后自动关闭提示                
+    if (cursorType = "Unknown") {
+        return
     } else {
-        SendEvent "{Ctrl Down}{v}{Ctrl Up}"
+        global g_MButtonLastTick
+
+        if (A_TickCount - g_MButtonLastTick < 300) {
+            return
+        }
+        g_MButtonLastTick := A_TickCount
+
+        if WinActive("ahk_group ShellGroup") {
+            SendInput "+{Insert}"
+        } else {
+            SendInput "^v"
+        }
     }
 }
 #HotIf
+
 
 
 /**
