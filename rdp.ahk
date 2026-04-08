@@ -129,10 +129,10 @@ class RDPManager {
 }
 
 ; Ctrl+Alt+M：若当前是远程桌面窗口，则最小化该窗口
-^!m::
+/* ^!m::
 {
     MinimizeCurrentRDPDesktop()
-}
+} */
 
 ; Ctrl+Alt+Shift+M：临时调试当前窗口/根窗口信息
 ^!+m::
@@ -288,7 +288,8 @@ ToggleOrConnectRDP(mode := "fast", targetHost := "X1") {
 
     if WinExist("ahk_exe " ahk_exe) {
         if WinActive("ahk_exe " ahk_exe) {
-            WinMinimize
+            MinimizeCurrentRDPDesktop()
+            ; WinMinimize
         } else {
             WinActivate
         }
