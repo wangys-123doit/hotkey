@@ -1,1 +1,8 @@
-﻿ToolTip 222 ToolTip 222 
+﻿ToolTip 222 ToolTip 222 [2026-04-08 13:08:40] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1
+[2026-04-08 13:08:53] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1
+[2026-04-08 13:08:56] mode=safe host=X1 failed=Failed to resolve IPv4 for host: X1
+[2026-04-08 13:09:26] mode=safe host=X1 failed=Failed to resolve IPv4 for host: X1
+[2026-04-08 13:10:34] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1
+[2026-04-08 13:12:22] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1
+[2026-04-08 13:21:02] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1. WoL is configured for this host, but MacAddress is empty in $WakeOnLanTargets.
+[2026-04-08 13:27:21] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1. WoL is configured in config.ini, but MacAddress is empty for this host.

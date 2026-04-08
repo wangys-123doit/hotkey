@@ -112,13 +112,13 @@ class RDPManager {
 ; 热键绑定
 ; ============================================
 
-; Win+\：快速直连（最快，不做前置探测）
+; Win+\：快速直连（先尝试唤醒，再快速连接）
 #\::
 {
     ToggleOrConnectRDP("fast", "X1")
 }
 
-; Ctrl+Win+\：安全探测（DNS + 3389 检测后再连接）
+; Ctrl+Win+\：安全探测（先尝试唤醒，再做解析和 3389 检测）
 #^\::
 {
     ToggleOrConnectRDP("safe", "X1")
@@ -159,7 +159,7 @@ ConnectRDPFast(targetHost := "X1") {
         MsgBox("RDP 启动失败: " . e.Message)
         return
     }
-    ToolTip("快速直连(仅解析): " . targetHost)
+    ToolTip("快速直连(含唤醒): " . targetHost)
     SetTimer(() => ToolTip(), -1000)
 }
 
@@ -179,7 +179,7 @@ ConnectRDPByProbe(targetHost := "X1") {
         MsgBox("RDP 启动失败: " . e.Message)
         return
     }
-    ToolTip("安全探测连接: " . targetHost)
+    ToolTip("安全探测连接(含唤醒): " . targetHost)
     SetTimer(() => ToolTip(), -1000)
 }
 
@@ -194,3 +194,24 @@ WriteRDPLog(msg) {
 
 ; Ctrl + Alt + P → prod
 ;~ ^!p::RDPManager.connect("prod")
+
+
+/* 最稳的方法是到目标主机 X1 上直接查，步骤如下。
+
+1. 先把 X1 手动开机并登录。
+2. 在 X1 上打开 PowerShell，执行：
+Get-NetAdapter -Physical | Where-Object {$_.Status -eq "Up"} | Select-Object Name, MacAddress, Status
+3. 选你实际在用的网卡（通常是有线 Ethernet），记下 MacAddress。
+
+备选方法：
+1. 在路由器后台看 DHCP 客户端列表，按主机名 X1 找到 MAC。
+2. 如果你知道 X1 当前 IP，也可以在 X1 上用 ipconfig /all 看 物理地址。
+
+拿到后填到 config.ini：
+1. 找到 [WakeOnLan] 段。
+2. 把 X1= 后面的值填成 MAC，例如 00-11-22-33-44-55。
+3. 保存后再测试热键或运行脚本。
+
+注意：
+1. 优先填有线网卡 MAC，WoL 对无线网卡通常不稳定或不支持。
+2. 你的脚本支持带 - 或 : 的格式。 */
