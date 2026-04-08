@@ -640,7 +640,7 @@ LWin & z::
 #^r::
 {
 	ahk_exe := "WindowsTerminal.exe"
-	APP_PATH := A_ProgramsCommon "\PowerShell\PowerShell 7 (x64).lnk"
+	APP_PATH := A_ProgramsCommon "\System Tools\Command Prompt.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; Win + 8热键打开powerdesigner
