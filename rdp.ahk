@@ -124,6 +124,127 @@ class RDPManager {
     ToggleOrConnectRDP("safe", "X1")
 }
 
+; Ctrl+Alt+M：若当前是远程桌面窗口，则最小化该窗口
+^!m::
+{
+    MinimizeCurrentRDPDesktop()
+}
+
+; Ctrl+Alt+Shift+M：临时调试当前窗口/根窗口信息
+^!+m::
+{
+    ShowRDPDebugInfo()
+}
+
+MinimizeCurrentRDPDesktop() {
+    hwnd := WinGetID("A")
+    if !hwnd {
+        return
+    }
+
+    if MinimizeMstscRootWindow(hwnd) {
+        return
+    }
+
+    if IsWindowsRemoteSession() {
+        MsgBox(
+            "当前脚本运行在远程会话中，但本地 mstsc 客户端窗口不在这个会话里，无法从这里最小化本机 RDP 窗口。`n`n请把脚本运行在本地客户端后再按这个热键。",
+            "RDP 提示"
+        )
+    } else {
+        ToolTip("未找到可最小化的 mstsc 窗口")
+        SetTimer(() => ToolTip(), -1200)
+    }
+}
+
+MinimizeMstscRootWindow(hwnd := 0) {
+    if !hwnd {
+        hwnd := WinGetID("A")
+    }
+
+    ; 优先：当前活动窗口的根窗口若属于 mstsc，直接最小化
+    if hwnd {
+        rootHwnd := GetRootWindow(hwnd)
+        rootProc := WinGetProcessName("ahk_id " rootHwnd)
+        if (rootProc = "mstsc.exe") {
+            WinMinimize("ahk_id " rootHwnd)
+            return true
+        }
+    }
+
+    ; 回退：遍历所有 mstsc 顶层窗口并最小化第一个可见窗口
+    ids := WinGetList("ahk_exe mstsc.exe")
+    for id in ids {
+        style := WinGetStyle("ahk_id " id)
+        if (style & 0x10000000) { ; WS_VISIBLE
+            WinMinimize("ahk_id " id)
+            return true
+        }
+    }
+
+    return false
+}
+
+ShowRDPDebugInfo() {
+    hwnd := WinGetID("A")
+    if !hwnd {
+        MsgBox("未获取到活动窗口。")
+        return
+    }
+
+    rootHwnd := GetRootWindow(hwnd)
+    winClass := WinGetClass("ahk_id " hwnd)
+    winProc := WinGetProcessName("ahk_id " hwnd)
+    rootClass := WinGetClass("ahk_id " rootHwnd)
+    rootProc := WinGetProcessName("ahk_id " rootHwnd)
+    isRemoteSession := IsWindowsRemoteSession() ? "true" : "false"
+    isRdpEnv := IsRDPEnvironment(hwnd) ? "true" : "false"
+
+    info := "Active hwnd: " hwnd "`n"
+        . "class: " winClass "`n"
+        . "process: " winProc "`n`n"
+        . "Root hwnd: " rootHwnd "`n"
+        . "root class: " rootClass "`n"
+        . "root process: " rootProc "`n`n"
+        . "IsWindowsRemoteSession: " isRemoteSession "`n"
+        . "IsRDPEnvironment: " isRdpEnv
+
+    MsgBox(info, "RDP Debug")
+}
+
+IsRDPEnvironment(hwnd := 0) {
+    if !hwnd {
+        hwnd := WinGetID("A")
+    }
+    return IsRDPWindow(hwnd)
+}
+
+IsWindowsRemoteSession() {
+    ; SM_REMOTESESSION = 0x1000，非 0 表示当前会话为远程桌面会话
+    return DllCall("user32\GetSystemMetrics", "int", 0x1000, "int") != 0
+}
+
+IsRDPWindow(hwnd) {
+    if !hwnd {
+        return false
+    }
+
+    rootHwnd := GetRootWindow(hwnd)
+    winClass := WinGetClass("ahk_id " rootHwnd)
+    winProc := WinGetProcessName("ahk_id " rootHwnd)
+
+    ; 全屏/嵌套场景下优先识别根窗口，兼容常见远程桌面窗口类
+    return (winProc = "mstsc.exe"
+        || winClass = "TscShellContainerClass"
+        || winClass = "TscShellWndClass")
+}
+
+GetRootWindow(hwnd) {
+    ; GA_ROOT = 2，返回顶级祖先窗口句柄
+    rootHwnd := DllCall("user32\GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
+    return rootHwnd ? rootHwnd : hwnd
+}
+
 ToggleOrConnectRDP(mode := "fast", targetHost := "X1") {
     ahk_exe := "mstsc.exe"
 
