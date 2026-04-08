@@ -214,4 +214,11 @@ Get-NetAdapter -Physical | Where-Object {$_.Status -eq "Up"} | Select-Object Nam
 
 注意：
 1. 优先填有线网卡 MAC，WoL 对无线网卡通常不稳定或不支持。
-2. 你的脚本支持带 - 或 : 的格式。 */
+2. 你的脚本支持带 - 或 : 的格式。 
+我的识别码:211212324 ●●●●●●
+使用向日葵即可对我发起远程协助
+向日葵下载地址:http://url.oray.com/tGJdas/
+
+
+
+*/

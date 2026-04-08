@@ -7,3 +7,17 @@
 [2026-04-08 13:21:02] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1. WoL is configured for this host, but MacAddress is empty in $WakeOnLanTargets.
 [2026-04-08 13:27:21] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1. WoL is configured in config.ini, but MacAddress is empty for this host.
 [2026-04-08 13:31:45] mode=safe host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
+[2026-04-08 13:33:34] mode=fast host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
+[2026-04-08 13:35:36] mode=safe host=X1 failed=Failed to resolve IPv4 for host: X1 after Wake-on-LAN retry
+[2026-04-08 13:36:00] mode=safe host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
+[2026-04-08 13:37:17] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1 after Wake-on-LAN retry
+[2026-04-08 13:39:28] mode=safe host=X1 failed=Failed to resolve IPv4 for host: X1 after Wake-on-LAN retry
+[2026-04-08 13:41:26] mode=fast host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
+[2026-04-08 13:41:43] mode=fast host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
+[2026-04-08 13:44:51] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1 after Wake-on-LAN retry
+[2026-04-08 13:45:04] mode=fast host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
+[2026-04-08 13:45:12] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1 after Wake-on-LAN retry
+[2026-04-08 13:46:01] mode=safe host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
+[2026-04-08 13:48:31] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1 after Wake-on-LAN retry
+[2026-04-08 13:49:27] mode=safe host=X1 mac_fallback_ip=192.168.0.110
+[2026-04-08 13:49:56] mode=safe host=X1 failed=TCP Port 3389 is closed or filtered on 192.168.0.110

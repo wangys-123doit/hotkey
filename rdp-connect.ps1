@@ -142,6 +142,72 @@ function Send-WakeOnLan {
     }
 }
 
+function Normalize-MacAddress {
+    param([string]$MacAddress)
+
+    if ([string]::IsNullOrWhiteSpace($MacAddress)) {
+        return ""
+    }
+
+    return ($MacAddress -replace '[:\-\. ]', '').ToUpperInvariant()
+}
+
+function Get-IPv4FromNeighborByMac {
+    param([Parameter(Mandatory=$true)][string]$MacAddress)
+
+    $normalized = Normalize-MacAddress -MacAddress $MacAddress
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return $null
+    }
+
+    try {
+        $neighbor = Get-NetNeighbor -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object {
+                (Normalize-MacAddress -MacAddress $_.LinkLayerAddress) -eq $normalized -and
+                $_.IPAddress -match '^\d{1,3}(?:\.\d{1,3}){3}$'
+            } |
+            Select-Object -First 1
+
+        if ($neighbor -and $neighbor.IPAddress) {
+            return $neighbor.IPAddress
+        }
+    } catch {}
+
+    try {
+        $arpRows = (& arp.exe -a 2>$null)
+        foreach ($row in $arpRows) {
+            if ($row -match '^\s*(?<ip>\d{1,3}(?:\.\d{1,3}){3})\s+(?<mac>[0-9a-fA-F\-]{17})\s+') {
+                if ((Normalize-MacAddress -MacAddress $matches.mac) -eq $normalized) {
+                    return $matches.ip
+                }
+            }
+        }
+    } catch {}
+
+    return $null
+}
+
+function Resolve-IPv4FromMacWithRetry {
+    param(
+        [Parameter(Mandatory=$true)][string]$MacAddress,
+        [int]$Retries = 20,
+        [int]$DelayMs = 1000
+    )
+
+    for ($attempt = 0; $attempt -le $Retries; $attempt++) {
+        $ip = Get-IPv4FromNeighborByMac -MacAddress $MacAddress
+        if (-not [string]::IsNullOrWhiteSpace($ip)) {
+            return $ip
+        }
+
+        if ($attempt -lt $Retries) {
+            Start-Sleep -Milliseconds $DelayMs
+        }
+    }
+
+    return $null
+}
+
 function Resolve-HostIPv4WithRetry {
     param(
         [Parameter(Mandatory=$true)][string]$HostName,
@@ -241,6 +307,14 @@ try {
             $wakeSent = $true
             Write-RDPLog "mode=$Mode host=$TargetHost wol=sent mac=$($wakeProfile.MacAddress) broadcast=$($wakeProfile.BroadcastAddress) port=$($wakeProfile.Port)"
             $ip = Resolve-HostIPv4WithRetry -HostName $TargetHost -Retries 20 -DelayMs 1000
+
+            if ([string]::IsNullOrWhiteSpace($ip)) {
+                Write-Host "[INFO] Hostname unresolved, trying MAC->IP fallback..." -ForegroundColor Cyan
+                $ip = Resolve-IPv4FromMacWithRetry -MacAddress $wakeProfile.MacAddress -Retries 20 -DelayMs 1000
+                if (-not [string]::IsNullOrWhiteSpace($ip)) {
+                    Write-RDPLog "mode=$Mode host=$TargetHost mac_fallback_ip=$ip"
+                }
+            }
         }
 
         if ([string]::IsNullOrWhiteSpace($ip)) {
