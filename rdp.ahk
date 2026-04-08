@@ -4,6 +4,10 @@
 ; rdp配置区
 ; ============================================
 
+global RDP_MINIMIZE_SIGNAL := "__AHK_RDP_MINIMIZE_MSTSC__"
+global g_RdpClipboardSignalBusy := false
+OnClipboardChange(HandleRdpClipboardSignal)
+
 class RDPConfig {
     static baseDir := "C:\Users\X1\OneDrive\文档\"   ; .rdp 文件目录
 
@@ -137,23 +141,57 @@ class RDPManager {
 }
 
 MinimizeCurrentRDPDesktop() {
-    hwnd := WinGetID("A")
-    if !hwnd {
+    RequestLocalMstscMinimize()
+}
+
+RequestLocalMstscMinimize() {
+    global RDP_MINIMIZE_SIGNAL
+
+    if !IsWindowsRemoteSession() {
+        if MinimizeMstscRootWindow() {
+            return true
+        }
+
+        ToolTip("未找到可最小化的 mstsc 窗口")
+        SetTimer(() => ToolTip(), -1200)
+        return false
+    }
+
+    try {
+        A_Clipboard := RDP_MINIMIZE_SIGNAL
+        ToolTip("已向本机发送最小化请求")
+        SetTimer(() => ToolTip(), -1200)
+        return true
+    } catch Error as e {
+        MsgBox("发送最小化请求失败: " e.Message, "RDP 提示")
+        return false
+    }
+}
+
+HandleRdpClipboardSignal(type) {
+    global RDP_MINIMIZE_SIGNAL, g_RdpClipboardSignalBusy
+
+    if g_RdpClipboardSignalBusy {
         return
     }
 
-    if MinimizeMstscRootWindow(hwnd) {
+    if (type != 1) {
         return
     }
 
     if IsWindowsRemoteSession() {
-        MsgBox(
-            "当前脚本运行在远程会话中，但本地 mstsc 客户端窗口不在这个会话里，无法从这里最小化本机 RDP 窗口。`n`n请把脚本运行在本地客户端后再按这个热键。",
-            "RDP 提示"
-        )
-    } else {
-        ToolTip("未找到可最小化的 mstsc 窗口")
-        SetTimer(() => ToolTip(), -1200)
+        return
+    }
+
+    if (A_Clipboard != RDP_MINIMIZE_SIGNAL) {
+        return
+    }
+
+    g_RdpClipboardSignalBusy := true
+    try {
+        MinimizeMstscRootWindow()
+    } finally {
+        g_RdpClipboardSignalBusy := false
     }
 }
 
