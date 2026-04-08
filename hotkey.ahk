@@ -1094,7 +1094,7 @@ isProxy := 0  ; 初始值为 0
 }
 
 
-
+$#^c::return
 
 
 
@@ -1406,7 +1406,14 @@ AppHotkeyMap := Map(
 
 #^e::HandleAppHotkey(A_ThisHotkey) ;~ 打开Excel
 #e:: HandleAppHotkey(A_ThisHotkey) ;~ 打开文件资源管理器
-#a:: HandleAppHotkey(A_ThisHotkey) ;~ 打开文件资源管理器
+; #a:: HandleAppHotkey(A_ThisHotkey) ;~ 打开文件资源管理器
+
+#a::
+{
+    SendInput "{LWin Down}{Ctrl Down}c{Ctrl Up}{LWin Up}"
+    SendInput "{Ctrl Up}{LWin Up}{RWin Up}"
+}
+
 
 HandleAppHotkey(hotkey) {
     global AppHotkeyMap
@@ -2235,7 +2242,7 @@ GetUrlByRightClick(uiElement) {
 
 
 ; Ctrl + alt + C 复制 Network Request URL
-^!c::
+/* ^!c::
 {
     try
     {
@@ -2271,4 +2278,4 @@ GetUrlByRightClick(uiElement) {
     {
         MsgBox "UIA copy url failed:`n" err.Message
     }
-}
+} */
