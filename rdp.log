@@ -6,3 +6,4 @@
 [2026-04-08 13:12:22] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1
 [2026-04-08 13:21:02] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1. WoL is configured for this host, but MacAddress is empty in $WakeOnLanTargets.
 [2026-04-08 13:27:21] mode=fast host=X1 failed=Failed to resolve IPv4 for host: X1. WoL is configured in config.ini, but MacAddress is empty for this host.
+[2026-04-08 13:31:45] mode=safe host=X1 wol=sent mac=74-56-3C-C8-9A-58 broadcast=255.255.255.255 port=9
