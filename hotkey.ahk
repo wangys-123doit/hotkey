@@ -1725,7 +1725,7 @@ IsRdpContext() {
 #s::
 {
 	ahk_exe := "Everything.exe"
-	APP_PATH := A_ProgramFiles " (x86)\Everything 1.5a\Everything.exe"
+	APP_PATH := A_ProgramsCommon "\Everything.lnk"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
@@ -1778,7 +1778,7 @@ IsRdpContext() {
 #q::
 {
     ahk_exe := "WXWork.exe"
-	APP_PATH := D_Programs " (x86)\WXWork\WXWork.exe"
+	APP_PATH := A_ProgramsCommon "\企业微信\企业微信.lnk"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
