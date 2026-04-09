@@ -1789,15 +1789,6 @@ IsRdpContext() {
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
-;~ 打开桌面远程连接
-;~ #\::
-;~ {
-    ;~ ahk_exe := "mstsc.exe"
-    ;~ APP_PROTOCOL := "mstsc.exe /v:DESKTOP-ABC"
-
-
-    ;~ ToggleWindow(ahk_exe, APP_PATH)
-;~ }
 
 #!g::
 {
