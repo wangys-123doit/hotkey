@@ -1636,6 +1636,13 @@ ExplorerSwitcher_OnNotify(wParam, lParam, msg, hwnd) {
     }
 
     code := NumGet(lParam, A_PtrSize * 2, "int")
+    ; NM_CLICK = -2，直接在通知里处理鼠标点击
+    if (code = -2) {
+        offItem := (A_PtrSize = 8) ? 24 : 12
+        rowNumber := NumGet(lParam, offItem, "int") + 1
+        ExplorerSwitcherActivateRow(rowNumber, "NM_CLICK")
+        return 0
+    }
     ; NM_CUSTOMDRAW
     if (code != -12) {
         return 0
@@ -1675,6 +1682,31 @@ ExplorerSwitcher_OnNotify(wParam, lParam, msg, hwnd) {
     }
 
     return 0
+}
+
+ExplorerSwitcherActivateRow(rowNumber, source := "") {
+    global g_ExplorerSwitcher
+
+    if (rowNumber < 1)
+        return
+
+    windows := g_ExplorerSwitcher.Has("windows") ? g_ExplorerSwitcher["windows"] : []
+    if !windows.Length || (rowNumber > windows.Length)
+        return
+    ; 调试用提示，正式使用可注释掉
+    /* lv := g_ExplorerSwitcher.Has("lv") ? g_ExplorerSwitcher["lv"] : 0
+    if IsObject(lv) {
+        title := lv.GetText(rowNumber, 2)
+        ToolTip(source " 触发`n行号: " . rowNumber . "`n标题: " . title)
+        SetTimer(() => ToolTip(), -2500)
+    } */
+
+    targetHwnd := windows[rowNumber]
+    CloseExplorerSwitcher(false)
+
+    if WinExist("ahk_id " targetHwnd) {
+        WinActivate("ahk_id " targetHwnd)
+    }
 }
 
 RefreshExplorerSwitcherList(windows) {
@@ -1735,10 +1767,13 @@ GetExplorerWindowDisplayTitle(hwnd, index) {
     return RegExReplace(title, "\s*-\s*文件资源管理器$")
 }
 
-ExplorerSwitcherListClick(ctrl, rowNumber) {
-    if (!rowNumber)
-        return
-    CommitExplorerSwitcher(rowNumber)
+ExplorerSwitcherListClick(ctrl, RowNumber) {
+    global g_ExplorerSwitcher
+
+    rowNumber := Integer(RowNumber)
+    if (rowNumber < 1)
+        rowNumber := ctrl.GetNext(0, "S")
+    ExplorerSwitcherActivateRow(rowNumber, "Click")
 }
 
 CommitExplorerSwitcher(forceIndex := 0) {
@@ -2162,7 +2197,7 @@ IsRdpContext() {
 #x::
 {
     ahk_exe := "WeChatAppEx.exe"
-    WinTitle := "WeChat"
+    WinTitle := "微信"
 	APP_PATH := "WeChatAppEx.exe"
     ; 通过判断应用标题来决定是否激活和隐藏
     if WinExist(WinTitle) {
@@ -2598,43 +2633,3 @@ GetUrlByRightClick(uiElement) {
     }
     return "未获取到链接"
 }
-
-
-; Ctrl + alt + C 复制 Network Request URL
-/* ^!c::
-{
-    try
-    {
-        if !WinActive("ahk_exe chrome.exe")
-            return
-
-        hwnd := WinActive("A")
-
-        root := UIA.ElementFromHandle(hwnd)
-
-        ; ControlType = DataItem (Network row)
-        cond := UIA.CreatePropertyCondition(
-            UIA.ControlTypePropertyId,
-            UIA.ControlType.DataItem
-        )
-
-        rows := root.FindAll(UIA.TreeScope_Subtree, cond)
-
-        if rows.Length = 0
-            throw Error("No DataItem rows found")
-
-        ; 默认使用第一个 row（可扩展选中行）
-        row := rows[1]
-
-        row.Click("right")
-
-        Sleep 80
-        Send "c"
-        Sleep 50
-        Send "u"
-    }
-    catch Error as err
-    {
-        MsgBox "UIA copy url failed:`n" err.Message
-    }
-} */
