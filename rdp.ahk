@@ -6,13 +6,12 @@
 
 global RDP_MINIMIZE_SIGNAL := "__AHK_RDP_MINIMIZE_MSTSC__"
 global g_RdpClipboardSignalBusy := false
-global g_RdpMinimizeArmedAt := 0
 global g_RdpClipboardCallback := ObjBindMethod(RdpClipboardBridge, "Handle")
 OnClipboardChange(g_RdpClipboardCallback)
 
 class RdpClipboardBridge {
     static Handle(type) {
-        global RDP_MINIMIZE_SIGNAL, g_RdpClipboardSignalBusy, g_RdpMinimizeArmedAt
+        global RDP_MINIMIZE_SIGNAL, g_RdpClipboardSignalBusy
 
         if g_RdpClipboardSignalBusy {
             return
@@ -26,20 +25,10 @@ class RdpClipboardBridge {
             return
         }
 
-        if !g_RdpMinimizeArmedAt {
-            return
-        }
-
-        if (A_TickCount - g_RdpMinimizeArmedAt > 3000) {
-            g_RdpMinimizeArmedAt := 0
-            return
-        }
-
         if (A_Clipboard != RDP_MINIMIZE_SIGNAL) {
             return
         }
 
-        g_RdpMinimizeArmedAt := 0
         g_RdpClipboardSignalBusy := true
         try {
             MinimizeMstscRootWindow()
@@ -182,7 +171,7 @@ class RDPManager {
 }
 
 RequestLocalMstscMinimize() {
-    global RDP_MINIMIZE_SIGNAL, g_RdpMinimizeArmedAt
+    global RDP_MINIMIZE_SIGNAL
 
     if !IsWindowsRemoteSession() {
         MinimizeCurrentRDPDesktop()
@@ -190,7 +179,6 @@ RequestLocalMstscMinimize() {
     }
 
     try {
-        g_RdpMinimizeArmedAt := A_TickCount
         A_Clipboard := RDP_MINIMIZE_SIGNAL
         ToolTip("已向本机发送最小化请求")
         SetTimer(() => ToolTip(), -1200)
