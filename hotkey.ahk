@@ -1672,56 +1672,25 @@ QuoteArg(s) {
     if hwnd
         WinSetAlwaysOnTop(-1, "ahk_id " hwnd) ; -1 = 切换
 }
+
 ; Prtsc键或者LAlt & space都能打开chrome
+; 仅在非 RDP 场景下允许触发，避免连接/切换 RDP 时误发 Win 键
+#HotIf !IsRdpContext()
 SC137::
 RCtrl Up:: {
     SendEvent "{LWin Down}2{LWin Up}"
-    ; 1. 强杀 Chrome，确保 Session 彻底结束/* /*
-    /* if ProcessExist("chrome.exe") {
-        ProcessClose("chrome.exe")
-        ToolTip("正在终止 Chrome 进程...")
-        Sleep(1000)
-    }
-
-    ; 2. 核心路径定义
-    chromePath := "C:\Program Files\Google\Chrome\Application\chrome.exe"
-    userDataDir := EnvGet("LocalAppData") . "\Google\Chrome\User Data"
-    localStateFile := userDataDir . "\Local State"
-
-    ; 3. [底层操作] 尝试通过正则修改 Local State 文件的国家码
-    ; 即使 IP 变了，Chrome 可能会缓存上次的 countryid
-    try {
-        if FileExist(localStateFile) {
-            content := FileRead(localStateFile)
-            ; 将 "variations_country":"CN" 替换为 "US"
-            newContent := RegExReplace(content, '"variations_country":"[A-Z]{2}"', '"variations_country":"US"')
-            if (content !== newContent) {
-                FileDelete(localStateFile)
-                FileAppend(newContent, localStateFile)
-                ToolTip("已修正 Local State 地区...")
-                Sleep(500)
-            }
-        }
-    } catch as e {
-        ; 文件可能被锁定，跳过，依赖命令行覆盖
-    }
-
-    ; 4. 构造启动参数 (这是核心)
-    ; --disable-quic: 阻断 UDP 泄露 (关键!)
-    ; --variations-server-url: 甚至可以尝试屏蔽变体服务器(可选，这里暂不使用)
-    ; --optimization-guide-service-api-key: 这一步通常由内部处理，不需手动
-    params := " --args"
-            . " --lang=en-US"
-            . " --disable-quic"
-            . " --country=US"
-            . " --reset-variation-state" ; 强制重新握手获取 Seed
-            . " --enable-features=OptimizationGuideModelDownloading,OptimizationGuideOnDeviceModel"
-
-    ToolTip("正在以 AI 增强模式启动 Chrome...")
-    Run(chromePath . params) */ */ */
-
-    ;~ Run('"C:\Program Files\Google\Chrome\Application\chrome.exe" --variations-override-country=us')
+    ; 原有逻辑保持不变
 }
+#HotIf
+
+IsRdpContext() {
+    ; 远程会话中，或当前焦点在 mstsc 窗口，都视为 RDP 场景
+    return IsWindowsRemoteSession()
+        || WinActive("ahk_exe mstsc.exe")
+        || WinActive("ahk_class TscShellContainerClass")
+        || WinActive("ahk_class TscShellWndClass")
+}
+
 ;~ LWin & d:: SendEvent "{LWin Down}1{LWin Up}"
 
 +space::
