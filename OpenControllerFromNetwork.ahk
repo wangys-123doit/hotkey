@@ -4,6 +4,16 @@ global CONFIG := {
     ideaPath: "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\JetBrains\IntelliJ IDEA 2023.2.3.lnk"
 }
 
+global PERF_LOG_ENABLED := true
+global DEVTOOLS_MENU_RETRIES := 2
+global DEVTOOLS_MENU_RETRY_SLEEP_MS := 35
+global DEVTOOLS_CONTEXTMENU_SLEEP_MS := 90
+global DEVTOOLS_POST_COPY_SLEEP_MS := 60
+global DEVTOOLS_CLIPWAIT_SEC := 0.2
+global DEVTOOLS_MENU_RETRIES_FALLBACK := 6
+global DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK := 70
+global DEVTOOLS_CLIPWAIT_SEC_FALLBACK := 0.45
+
 ;~ 2、主入口
 ^!g::OpenControllerFromNetwork()
 ^!u::CopyDevToolsSelectedRequestURL()
@@ -52,26 +62,43 @@ CopyDevToolsSelectedRequestURL()
 {
     try
     {
+        t0 := A_TickCount
+        PerfLog("CopyDevToolsSelectedRequestURL start")
+
         ; 优先模拟 DevTools 常规操作：右键 -> 复制 -> 复制 URL
+        t := A_TickCount
         url := DevTools_CopyURLViaContextMenu()
+        PerfLog(Format("after DevTools_CopyURLViaContextMenu (+{1} ms)", A_TickCount - t))
 
         if (url = "")
+        {
+            t := A_TickCount
             url := DevTools_GetSelectedURL()
+            PerfLog(Format("after DevTools_GetSelectedURL (+{1} ms)", A_TickCount - t))
+        }
 
         if (url = "")
+        {
+            t := A_TickCount
             url := DevTools_GetSelectedURLFromClipboard()
+            PerfLog(Format("after DevTools_GetSelectedURLFromClipboard (+{1} ms)", A_TickCount - t))
+        }
 
         if (url = "")
             throw Error("No selected request URL found in DevTools Network.`n请将鼠标停在 Network 请求行上后再按热键。")
 
         ; A_Clipboard := url
         ; 解析 URL，提取 path 部分并放入剪贴板 供后续使用
+        t := A_TickCount
         A_Clipboard := ParseAPIPath(url)
+        PerfLog(Format("after ParseAPIPath (+{1} ms)", A_TickCount - t))
+        PerfLog(Format("CopyDevToolsSelectedRequestURL done total={1} ms", A_TickCount - t0))
         ; ToolTip "Copied URL: " url
         ; SetTimer () => ToolTip(), -1200
     }
     catch Error as err
     {
+        PerfLog("CopyDevToolsSelectedRequestURL error: " err.Message)
         MsgBox "Error:`n" err.Message
     }
 }
@@ -119,47 +146,202 @@ DevTools_GetSelectedURLFromClipboard()
 
 DevTools_CopyURLViaContextMenu()
 {
+    totalStart := A_TickCount
+    PerfLog("DevTools_CopyURLViaContextMenu start")
+
     clipBak := A_Clipboard
     A_Clipboard := ""
 
-    opened := DevTools_OpenContextMenuOnSelectedRequest(&mx, &my)
-
-    ; 若未拿到选中行，则回退到鼠标位置右键
-    if !opened
+    ; 快速路径：若已选中请求行，则优先在该行中点右键（更可靠且避免额外扫描）
+    row := DevTools_GetSelectedRequestRowElement()
+    if IsObject(row)
     {
-        MouseGetPos &mx, &my
-        Click "Right"
-        Sleep 180
-    }
+        try br := row.BoundingRectangle
+        catch
+            br := ""
 
-    ; 严格按手工路径：先 Copy/复制，再 Copy URL/复制网址
-    if DevTools_WaitAndInvokeMenuItem("copy", mx, my)
-    {
-        Sleep 180
-        if DevTools_WaitAndInvokeMenuItem("url", mx, my)
+        if IsObject(br) || br != ""
         {
-            ClipWait 0.5
-            copied := Trim(A_Clipboard)
-            A_Clipboard := clipBak
-            if RegExMatch(copied, "i)https?://[^\s]+", &m)
-                return m[0]
+            mx := br.l + ((br.r - br.l) // 2)
+            my := br.t + ((br.b - br.t) // 2)
+            DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
+            PerfLog("fast path: open menu on selected row")
+        }
+        else
+        {
+            MouseGetPos &mx, &my
+            DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
+            PerfLog(Format("fast path right click (+{1} ms sleep)", DEVTOOLS_CONTEXTMENU_SLEEP_MS))
         }
     }
-
-    ; 兜底：部分版本会直接出现 Copy URL 一级菜单
-    if DevTools_WaitAndInvokeMenuItem("url", mx, my)
+    else
     {
-        ClipWait 0.5
-        copied := Trim(A_Clipboard)
+        MouseGetPos &mx, &my
+        DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
+        PerfLog(Format("fast path right click (+{1} ms sleep)", DEVTOOLS_CONTEXTMENU_SLEEP_MS))
+    }
+
+    ; 鼠标快速路径：允许一次 full-scan，尽量首轮命中，避免二次开菜单
+    copiedUrl := DevTools_TryCopyURLFromOpenedMenu(mx, my, true)
+    if (copiedUrl != "")
+    {
         A_Clipboard := clipBak
-        if RegExMatch(copied, "i)https?://[^\s]+", &m)
-            return m[0]
+        PerfLog(Format("DevTools_CopyURLViaContextMenu done total={1} ms (mouse fast path)", A_TickCount - totalStart))
+        return copiedUrl
+    }
+
+    Send "{Esc}"
+
+    ; 极限兜底：聚焦鼠标所在请求行后直接 Ctrl+C
+    t := A_TickCount
+    copiedUrl := DevTools_TryCopyURLViaCtrlCAtMouse(mx, my)
+    PerfLog(Format("ctrl+c fallback (+{1} ms) len={2}", A_TickCount - t, StrLen(copiedUrl)))
+    if (copiedUrl != "")
+    {
+        A_Clipboard := clipBak
+        PerfLog(Format("DevTools_CopyURLViaContextMenu done total={1} ms (ctrl+c fallback)", A_TickCount - totalStart))
+        return copiedUrl
+    }
+
+    ; 次级兜底：尝试按选中请求行打开菜单后再次复制
+    t := A_TickCount
+    opened := DevTools_OpenContextMenuOnSelectedRequest(&mx, &my)
+    PerfLog(Format("DevTools_OpenContextMenuOnSelectedRequest (+{1} ms) opened={2}", A_TickCount - t, opened ? "true" : "false"))
+
+    if opened
+    {
+        copiedUrl := DevTools_TryCopyURLFromOpenedMenu(mx, my, true)
+        if (copiedUrl != "")
+        {
+            A_Clipboard := clipBak
+            PerfLog(Format("DevTools_CopyURLViaContextMenu done total={1} ms (row fallback path)", A_TickCount - totalStart))
+            return copiedUrl
+        }
     }
 
     ; 取消菜单
     Send "{Esc}"
     A_Clipboard := clipBak
+    PerfLog(Format("DevTools_CopyURLViaContextMenu done total={1} ms (empty)", A_TickCount - totalStart))
     return ""
+}
+
+DevTools_TryCopyURLFromOpenedMenu(mx, my, allowFullScan := true)
+{
+    global DEVTOOLS_POST_COPY_SLEEP_MS
+    global DEVTOOLS_CLIPWAIT_SEC
+    global DEVTOOLS_MENU_RETRIES_FALLBACK
+    global DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK
+    global DEVTOOLS_CLIPWAIT_SEC_FALLBACK
+
+    ; 常规最快路径：先 Copy 再双 Enter 选中子菜单首项（通常是 Copy URL）
+    t := A_TickCount
+    if DevTools_WaitAndInvokeMenuItem("copy", mx, my, 3, "", allowFullScan)
+    {
+        PerfLog(Format("DevTools_WaitAndInvokeMenuItem(copy) (+{1} ms)", A_TickCount - t))
+        Sleep DEVTOOLS_POST_COPY_SLEEP_MS
+
+        ; 快速路径：点击 Copy 后，直接双 Enter 选择子菜单首项（通常是 Copy URL）
+        t := A_TickCount
+        Send "{Enter}{Enter}"
+        ClipWait DEVTOOLS_CLIPWAIT_SEC
+        copied := Trim(A_Clipboard)
+        PerfLog(Format("double-enter after copy (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
+        if RegExMatch(copied, "i)https?://[^\s]+", &m)
+            return m[0]
+
+        ; 双 Enter 未命中时，回退到原 URL 菜单查找
+        t := A_TickCount
+        if DevTools_WaitAndInvokeMenuItem("url", mx, my, 3, "", allowFullScan)
+        {
+            PerfLog(Format("DevTools_WaitAndInvokeMenuItem(url after copy) (+{1} ms)", A_TickCount - t))
+
+            t := A_TickCount
+            ClipWait DEVTOOLS_CLIPWAIT_SEC
+            copied := Trim(A_Clipboard)
+            PerfLog(Format("ClipWait/Trim after url (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
+            if RegExMatch(copied, "i)https?://[^\s]+", &m)
+                return m[0]
+        }
+    }
+    else
+    {
+        PerfLog(Format("DevTools_WaitAndInvokeMenuItem(copy) failed (+{1} ms)", A_TickCount - t))
+    }
+
+    ; 快速键优先：在菜单打开后连按三次 C（通常能选中 Copy / 复制），提高对多语言菜单的兼容性
+    t := A_TickCount
+    Send "c"
+    Sleep 40
+    Send "c"
+    Sleep 40
+    Send "c"
+    Sleep DEVTOOLS_POST_COPY_SLEEP_MS
+    ClipWait DEVTOOLS_CLIPWAIT_SEC
+    copied := Trim(A_Clipboard)
+    PerfLog(Format("quick-key triple-C (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
+    if RegExMatch(copied, "i)https?://[^\s]+", &m)
+        return m[0]
+
+    ; 轻量兜底：尝试一级菜单中的 Copy URL（仅局部查找，不做全局扫描）
+    t := A_TickCount
+    if DevTools_WaitAndInvokeMenuItem("url", mx, my, 1, "", false)
+    {
+        PerfLog(Format("DevTools_WaitAndInvokeMenuItem(url direct local-only) (+{1} ms)", A_TickCount - t))
+
+        t := A_TickCount
+        ClipWait DEVTOOLS_CLIPWAIT_SEC
+        copied := Trim(A_Clipboard)
+        PerfLog(Format("ClipWait/Trim direct url local-only (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
+        if RegExMatch(copied, "i)https?://[^\s]+", &m)
+            return m[0]
+    }
+
+    ; 强兜底：放宽重试与等待，兼容慢机器/菜单渲染慢
+    PerfLog("enter reliable fallback menu flow")
+
+    t := A_TickCount
+    if DevTools_WaitAndInvokeMenuItem("copy", mx, my, DEVTOOLS_MENU_RETRIES_FALLBACK, DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK, allowFullScan)
+    {
+        PerfLog(Format("fallback DevTools_WaitAndInvokeMenuItem(copy) (+{1} ms)", A_TickCount - t))
+        Sleep 120
+
+        ; 可靠模式也优先尝试双 Enter，减少一次菜单扫描
+        t := A_TickCount
+        Send "{Enter}{Enter}"
+        ClipWait DEVTOOLS_CLIPWAIT_SEC_FALLBACK
+        copied := Trim(A_Clipboard)
+        PerfLog(Format("fallback double-enter after copy (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
+        if RegExMatch(copied, "i)https?://[^\s]+", &m)
+            return m[0]
+
+        t := A_TickCount
+        if DevTools_WaitAndInvokeMenuItem("url", mx, my, DEVTOOLS_MENU_RETRIES_FALLBACK, DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK, allowFullScan)
+        {
+            PerfLog(Format("fallback DevTools_WaitAndInvokeMenuItem(url after copy) (+{1} ms)", A_TickCount - t))
+
+            t := A_TickCount
+            ClipWait DEVTOOLS_CLIPWAIT_SEC_FALLBACK
+            copied := Trim(A_Clipboard)
+            PerfLog(Format("fallback ClipWait/Trim after url (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
+            if RegExMatch(copied, "i)https?://[^\s]+", &m)
+                return m[0]
+        }
+    }
+
+    return ""
+}
+
+PerfLog(msg)
+{
+    global PERF_LOG_ENABLED
+
+    if !PERF_LOG_ENABLED
+        return
+
+    line := Format("[{1}] {2}`n", A_TickCount, msg)
+    OutputDebug line
+    FileAppend line, A_Temp "\\ahk_devtools_perf.log", "UTF-8"
 }
 
 DevTools_GetSelectedRequestRowElement()
@@ -174,6 +356,7 @@ DevTools_GetSelectedRequestRowElement()
 
     best := ""
     bestScore := -1
+
 
     for row in rows
     {
@@ -248,22 +431,149 @@ DevTools_OpenContextMenuOnSelectedRequest(&mx, &my)
     return true
 }
 
-DevTools_WaitAndInvokeMenuItem(mode, mx, my, retries := 5)
+DevTools_OpenContextMenuAtPoint(mx, my, waitMs := 120)
 {
+    MouseGetPos &oldX, &oldY
+    MouseMove mx, my, 0
+    Click "Right"
+    MouseMove oldX, oldY, 0
+    Sleep waitMs
+    return true
+}
+
+DevTools_TryCopyURLViaCtrlCAtMouse(mx, my)
+{
+    MouseGetPos &oldX, &oldY
+    MouseMove mx, my, 0
+    Click
+    Sleep 40
+    Send "^c"
+    ClipWait 0.25
+    MouseMove oldX, oldY, 0
+
+    copied := Trim(A_Clipboard)
+    if (copied = "")
+        return ""
+
+    if RegExMatch(copied, "i)https?://[^\s]+", &m)
+        return m[0]
+
+    return ""
+}
+
+DevTools_WaitAndInvokeMenuItem(mode, mx, my, retries := "", sleepMs := "", enableFinalFullScan := true)
+{
+    global DEVTOOLS_MENU_RETRIES
+    global DEVTOOLS_MENU_RETRY_SLEEP_MS
+
+    if (retries = "")
+        retries := DEVTOOLS_MENU_RETRIES
+
+    if (sleepMs = "")
+        sleepMs := DEVTOOLS_MENU_RETRY_SLEEP_MS
+
     loop retries
     {
-        if DevTools_InvokeBestMenuItem(mode, mx, my)
+        if DevTools_InvokeBestMenuItem(mode, mx, my, false)
             return true
-        Sleep 80
+        Sleep sleepMs
     }
+
+    if enableFinalFullScan
+    {
+        if DevTools_InvokeBestMenuItem(mode, mx, my, true)
+            return true
+    }
+
     return false
 }
 
-DevTools_InvokeBestMenuItem(mode, mx, my)
+DevTools_InvokeBestMenuItem(mode, mx, my, allowFullScan := true)
 {
-    root := UIA.GetRootElement()
     cond := UIA.CreatePropertyCondition(UIA.Property.ControlType, UIA.Type.MenuItem)
-    items := root.FindAll(cond, UIA.TreeScope.Subtree)
+    ; 优先在焦点和鼠标附近做局部查找，避免全桌面 Subtree 扫描
+    anchors := []
+
+    try
+    {
+        focused := UIA.GetFocusedElement()
+        if IsObject(focused)
+            anchors.Push(focused)
+    }
+    catch
+    {
+    }
+
+    ; 补充更多菜单常见偏移点，提高局部命中率，降低触发 full-scan 概率
+    for offset in [[18, 12], [10, 22], [0, 0], [60, 18], [96, 22], [132, 30], [72, 44], [118, 56], [-18, 16]]
+    {
+        try
+        {
+            el := UIA.ElementFromPoint(mx + offset[1], my + offset[2],, 0)
+            if IsObject(el)
+                anchors.Push(el)
+        }
+        catch
+        {
+        }
+    }
+
+    for anchor in anchors
+    {
+        best := DevTools_FindBestMenuItemNearAnchor(anchor, cond, mode, mx, my)
+        if IsObject(best)
+            return DevTools_ClickOrInvoke(best)
+    }
+
+    if allowFullScan
+    {
+        ; 最后兜底：若局部查找失败，再做一次全局扫描
+        PerfLog("DevTools_InvokeBestMenuItem fallback full-scan")
+        root := UIA.GetRootElement()
+        best := DevTools_FindBestMenuItemInElement(root, cond, mode, mx, my, 1100, 760)
+        if IsObject(best)
+            return DevTools_ClickOrInvoke(best)
+    }
+
+    return false
+}
+
+DevTools_FindBestMenuItemNearAnchor(anchor, cond, mode, mx, my)
+{
+    bases := []
+
+    if IsObject(anchor)
+        bases.Push(anchor)
+
+    try
+    {
+        p1 := UIA.TreeWalkerTrue.GetParentElement(anchor)
+        if IsObject(p1)
+            bases.Push(p1)
+
+        p2 := UIA.TreeWalkerTrue.GetParentElement(p1)
+        if IsObject(p2)
+            bases.Push(p2)
+    }
+    catch
+    {
+    }
+
+    for base in bases
+    {
+        best := DevTools_FindBestMenuItemInElement(base, cond, mode, mx, my, 500, 360)
+        if IsObject(best)
+            return best
+    }
+
+    return ""
+}
+
+DevTools_FindBestMenuItemInElement(base, cond, mode, mx, my, nearX := 700, nearY := 500)
+{
+    try items := base.FindAll(cond, UIA.TreeScope.Subtree)
+    catch
+        return ""
 
     best := ""
     bestScore := -1
@@ -288,49 +598,56 @@ DevTools_InvokeBestMenuItem(mode, mx, my)
 
         cx := br.l + (w // 2)
         cy := br.t + (h // 2)
-        nearCursor := (Abs(cx - mx) <= 700 && Abs(cy - my) <= 500)
-        if !nearCursor
+        if !(Abs(cx - mx) <= nearX && Abs(cy - my) <= nearY)
             continue
 
-        score := 0
-        if (mode = "url")
-        {
-            if (InStr(name, "复制") || InStr(name, "copy")) && (InStr(name, "url") || InStr(name, "网址") || InStr(name, "链接"))
-                score += 20
-            if InStr(name, "url")
-                score += 8
-            if InStr(name, "网址") || InStr(name, "链接")
-                score += 7
-            if InStr(name, "复制") || InStr(name, "copy")
-                score += 4
-            if InStr(name, "curl") || InStr(name, "har") || InStr(name, "fetch") || InStr(name, "powershell") || InStr(name, "open") || InStr(name, "source")
-                score -= 3
-        }
-        else
-        {
-            if (name = "复制" || name = "copy")
-                score += 16
-            if InStr(name, "复制") || InStr(name, "copy")
-                score += 5
-            if InStr(name, "url") || InStr(name, "网址") || InStr(name, "链接")
-                score -= 8
-        }
-
-        score += 2
+        score := DevTools_ScoreMenuItemName(mode, name)
 
         if (score > bestScore)
         {
-            bestScore := score
             best := item
+            bestScore := score
         }
     }
 
-    if (bestScore < 6)
-        return false
+    return (bestScore >= 6) ? best : ""
+}
 
+DevTools_ScoreMenuItemName(mode, name)
+{
+    score := 2
+
+    if (mode = "url")
+    {
+        if (InStr(name, "复制") || InStr(name, "copy")) && (InStr(name, "url") || InStr(name, "网址") || InStr(name, "链接"))
+            score += 20
+        if InStr(name, "url")
+            score += 8
+        if InStr(name, "网址") || InStr(name, "链接")
+            score += 7
+        if InStr(name, "复制") || InStr(name, "copy")
+            score += 4
+        if InStr(name, "curl") || InStr(name, "har") || InStr(name, "fetch") || InStr(name, "powershell") || InStr(name, "open") || InStr(name, "source")
+            score -= 3
+    }
+    else
+    {
+        if (name = "复制" || name = "copy")
+            score += 16
+        if InStr(name, "复制") || InStr(name, "copy")
+            score += 5
+        if InStr(name, "url") || InStr(name, "网址") || InStr(name, "链接")
+            score -= 8
+    }
+
+    return score
+}
+
+DevTools_ClickOrInvoke(item)
+{
     try
     {
-        best.Click()
+        item.Click()
         return true
     }
     catch
@@ -339,7 +656,7 @@ DevTools_InvokeBestMenuItem(mode, mx, my)
 
     try
     {
-        best.Invoke()
+        item.Invoke()
         return true
     }
     catch

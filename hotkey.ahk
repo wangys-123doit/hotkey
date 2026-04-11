@@ -641,7 +641,7 @@ LWin & z::
 #^r::
 {
 	ahk_exe := "WindowsTerminal.exe"
-	APP_PATH := A_ProgramsCommon "\System Tools\Command Prompt.lnk"
+	APP_PATH := A_ProgramsCommon "\PowerShell\PowerShell 7 (x64).lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; Win + 8热键打开powerdesigner
@@ -1638,13 +1638,13 @@ QuoteArg(s) {
 
 ; Prtsc键或者LAlt & space都能打开chrome
 ; 仅在非 RDP 场景下允许触发，避免连接/切换 RDP 时误发 Win 键
-#HotIf !IsRdpContext()
+; #HotIf !IsRdpContext()
 SC137::
 RCtrl Up:: {
     SendEvent "{LWin Down}2{LWin Up}"
     ; 原有逻辑保持不变
 }
-#HotIf
+; #HotIf
 
 IsRdpContext() {
     ; 远程会话中，或当前焦点在 mstsc 窗口，都视为 RDP 场景
@@ -1766,7 +1766,7 @@ IsRdpContext() {
 #!g::
 {
 	ahk_exe := "mintty.exe" ; git-bash
-	APP_PATH := A_ProgramFiles "\Git\git-bash.exe" ; git-bash
+	APP_PATH := A_ProgramsCommon "\Git\Git Bash.lnk" ; git-bash
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
