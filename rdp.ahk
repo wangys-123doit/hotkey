@@ -178,12 +178,29 @@ RequestLocalMstscMinimize() {
         return
     }
 
+    savedClipboard := ClipboardAll()
     try {
         A_Clipboard := RDP_MINIMIZE_SIGNAL
+        ; 信号发送后尽快恢复原剪贴板，避免污染正常复制内容
+        SetTimer(RestoreClipboardAfterRdpSignal.Bind(savedClipboard), -150)
         ToolTip("已向本机发送最小化请求")
         SetTimer(() => ToolTip(), -1200)
     } catch Error as e {
         MsgBox("发送最小化请求失败: " e.Message, "RDP 提示")
+    }
+}
+
+RestoreClipboardAfterRdpSignal(savedClipboard) {
+    global RDP_MINIMIZE_SIGNAL
+
+    ; 如果用户已复制了新内容，就不要再回写旧剪贴板
+    if (A_Clipboard != RDP_MINIMIZE_SIGNAL) {
+        return
+    }
+
+    try {
+        A_Clipboard := savedClipboard
+    } catch {
     }
 }
 
