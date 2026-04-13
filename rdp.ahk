@@ -6,34 +6,40 @@
 
 global RDP_MINIMIZE_SIGNAL := "__AHK_RDP_MINIMIZE_MSTSC__"
 global g_RdpClipboardSignalBusy := false
+global g_RdpLastGoodClipboard := ""
 global g_RdpClipboardCallback := ObjBindMethod(RdpClipboardBridge, "Handle")
 OnClipboardChange(g_RdpClipboardCallback)
+try {
+    g_RdpLastGoodClipboard := ClipboardAll()
+}
 
 class RdpClipboardBridge {
     static Handle(type) {
-        global RDP_MINIMIZE_SIGNAL, g_RdpClipboardSignalBusy
+        global RDP_MINIMIZE_SIGNAL, g_RdpClipboardSignalBusy, g_RdpLastGoodClipboard
 
         if g_RdpClipboardSignalBusy {
             return
         }
 
-        if (type != 1) {
+        isSignal := (type = 1 && (A_Clipboard = RDP_MINIMIZE_SIGNAL || A_Clipboard = "RDP_MINIMIZE_SIGNAL"))
+
+        ; 本地端收到信号时执行最小化，并恢复为最近一次正常剪贴板
+        if (!IsWindowsRemoteSession() && isSignal) {
+            g_RdpClipboardSignalBusy := true
+            try {
+                MinimizeMstscRootWindow()
+                A_Clipboard := g_RdpLastGoodClipboard
+            } finally {
+                g_RdpClipboardSignalBusy := false
+            }
             return
         }
 
-        if IsWindowsRemoteSession() {
-            return
-        }
-
-        if (A_Clipboard != RDP_MINIMIZE_SIGNAL) {
-            return
-        }
-
-        g_RdpClipboardSignalBusy := true
-        try {
-            MinimizeMstscRootWindow()
-        } finally {
-            g_RdpClipboardSignalBusy := false
+        ; 记录最近一次正常剪贴板，用于信号覆盖时回滚
+        if !isSignal {
+            try {
+                g_RdpLastGoodClipboard := ClipboardAll()
+            }
         }
     }
 }
