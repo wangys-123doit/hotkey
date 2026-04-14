@@ -1,21 +1,23 @@
 ;~ 1、配置区
-global CONFIG := {
-    projectRoot: "D:\code\jd-tduck-x-platform",   ; 你的项目路径
-    ideaPath: "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\JetBrains\IntelliJ IDEA 2023.2.3.lnk"
-}
-
 global PERF_LOG_ENABLED := true
 global DEVTOOLS_MENU_RETRIES := 2
+global DEVTOOLS_MENU_RETRIES_FAST := 1
 global DEVTOOLS_MENU_RETRY_SLEEP_MS := 35
+global DEVTOOLS_MENU_RETRY_SLEEP_MS_FAST := 22
 global DEVTOOLS_CONTEXTMENU_SLEEP_MS := 90
 global DEVTOOLS_POST_COPY_SLEEP_MS := 60
 global DEVTOOLS_CLIPWAIT_SEC := 0.2
 global DEVTOOLS_MENU_RETRIES_FALLBACK := 6
 global DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK := 70
 global DEVTOOLS_CLIPWAIT_SEC_FALLBACK := 0.45
+global DEVTOOLS_TRIPLE_C_DISABLE_AFTER_FAILS := 2
+global DEVTOOLS_TRIPLE_C_FAIL_STREAK := 0
+global DEVTOOLS_TRIPLE_C_SKIP_MODE := false
 global DEVTOOLS_MENU_CACHE_TTL_MS := 15000
 global DEVTOOLS_MENU_CACHE_DRIFT_X := 520
 global DEVTOOLS_MENU_CACHE_DRIFT_Y := 420
+global DEVTOOLS_MENU_CALL_ROUND := 0
+global DEVTOOLS_MENU_CACHE_DISABLED_ROUND := {copy: 0, url: 0}
 global DEVTOOLS_MENU_ANCHOR_CACHE := {
     hwnd: 0,
     copy: {valid: false, x: 0, y: 0, mx: 0, my: 0, ts: 0},
@@ -45,20 +47,6 @@ OpenControllerFromNetwork()
 
         A_Clipboard := path
 
-        ;~ MsgBox A_Clipboard
-
-        /* file := FindController(path)
-
-        if (file = "")
-            throw Error("Controller not found")
-
-        OpenInIDE(file)
-
-        ToolTip "Opened: " path
-        SetTimer () => ToolTip(), -1000
-        */
-
-
     }
     catch Error as err
     {
@@ -82,14 +70,12 @@ CopyDevToolsSelectedRequestURL()
         {
             t := A_TickCount
             url := DevTools_GetSelectedURL()
-            PerfLog(Format("after DevTools_GetSelectedURL (+{1} ms)", A_TickCount - t))
         }
 
         if (url = "")
         {
             t := A_TickCount
             url := DevTools_GetSelectedURLFromClipboard()
-            PerfLog(Format("after DevTools_GetSelectedURLFromClipboard (+{1} ms)", A_TickCount - t))
         }
 
         if (url = "")
@@ -97,9 +83,7 @@ CopyDevToolsSelectedRequestURL()
 
         ; A_Clipboard := url
         ; 解析 URL，提取 path 部分并放入剪贴板 供后续使用
-        t := A_TickCount
         A_Clipboard := ParseAPIPath(url)
-        PerfLog(Format("after ParseAPIPath (+{1} ms)", A_TickCount - t))
         PerfLog(Format("CopyDevToolsSelectedRequestURL done total={1} ms", A_TickCount - t0))
         ; ToolTip "Copied URL: " url
         ; SetTimer () => ToolTip(), -1200
@@ -164,14 +148,9 @@ DevTools_CopyURLViaContextMenu()
     MouseGetPos &mx, &my
     t := A_TickCount
     opened := DevTools_OpenContextMenuOnFocusedOrSelectedRequest(&mx, &my)
-    if opened
-    {
-        PerfLog(Format("fast path row right click (+{1} ms)", A_TickCount - t))
-    }
-    else
+    if !opened
     {
         DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
-        PerfLog(Format("fast path right click (+{1} ms sleep)", DEVTOOLS_CONTEXTMENU_SLEEP_MS))
     }
 
     ; 鼠标快速路径：允许一次 full-scan，尽量首轮命中，避免二次开菜单
@@ -186,9 +165,7 @@ DevTools_CopyURLViaContextMenu()
     Send "{Esc}"
 
     ; 次级兜底：尝试按选中请求行打开菜单后再次复制
-    t := A_TickCount
     opened := DevTools_OpenContextMenuOnSelectedRequest(&mx, &my)
-    PerfLog(Format("DevTools_OpenContextMenuOnSelectedRequest (+{1} ms) opened={2}", A_TickCount - t, opened ? "true" : "false"))
 
     if opened
     {
@@ -202,9 +179,7 @@ DevTools_CopyURLViaContextMenu()
     }
 
     ; 极限兜底：聚焦鼠标所在请求行后直接 Ctrl+C
-    t := A_TickCount
     copiedUrl := DevTools_TryCopyURLViaCtrlCAtMouse(mx, my)
-    PerfLog(Format("ctrl+c fallback (+{1} ms) len={2}", A_TickCount - t, StrLen(copiedUrl)))
     if (copiedUrl != "")
     {
         A_Clipboard := clipBak
@@ -223,69 +198,76 @@ DevTools_TryCopyURLFromOpenedMenu(mx, my, allowFullScan := true)
 {
     global DEVTOOLS_POST_COPY_SLEEP_MS
     global DEVTOOLS_CLIPWAIT_SEC
+    global DEVTOOLS_MENU_RETRIES_FAST
+    global DEVTOOLS_MENU_RETRY_SLEEP_MS_FAST
     global DEVTOOLS_MENU_RETRIES_FALLBACK
     global DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK
     global DEVTOOLS_CLIPWAIT_SEC_FALLBACK
+    global DEVTOOLS_TRIPLE_C_DISABLE_AFTER_FAILS
+    global DEVTOOLS_TRIPLE_C_FAIL_STREAK
+    global DEVTOOLS_TRIPLE_C_SKIP_MODE
+    global DEVTOOLS_MENU_CALL_ROUND
 
-    ; 快速键优先：菜单打开后连按三次 C，尽量绕过 UIA 查找
-    t := A_TickCount
-    Send "c"
-    Sleep 40
-    Send "c"
-    Sleep 40
-    Send "c"
-    Sleep DEVTOOLS_POST_COPY_SLEEP_MS
-    ClipWait DEVTOOLS_CLIPWAIT_SEC
-    copied := Trim(A_Clipboard)
-    PerfLog(Format("quick-key triple-C (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
-    if RegExMatch(copied, "i)https?://[^\s]+", &m)
-        return m[0]
+    DEVTOOLS_MENU_CALL_ROUND += 1
+
+    ; 自适应快速键：连续失败后进入 skip 模式，稳定优先不自动 probe
+    shouldTryTripleC := true
+    if DEVTOOLS_TRIPLE_C_SKIP_MODE
+    {
+        shouldTryTripleC := false
+    }
+
+    if shouldTryTripleC
+    {
+        Send "c"
+        Sleep 40
+        Send "c"
+        Sleep 40
+        Send "c"
+        Sleep DEVTOOLS_POST_COPY_SLEEP_MS
+        ClipWait DEVTOOLS_CLIPWAIT_SEC
+        copied := Trim(A_Clipboard)
+        if RegExMatch(copied, "i)https?://[^\s]+", &m)
+        {
+            DEVTOOLS_TRIPLE_C_FAIL_STREAK := 0
+            DEVTOOLS_TRIPLE_C_SKIP_MODE := false
+            return m[0]
+        }
+
+        DEVTOOLS_TRIPLE_C_FAIL_STREAK += 1
+        if (DEVTOOLS_TRIPLE_C_FAIL_STREAK >= DEVTOOLS_TRIPLE_C_DISABLE_AFTER_FAILS)
+        {
+            DEVTOOLS_TRIPLE_C_SKIP_MODE := true
+        }
+    }
 
     ; 常规路径：UIA 定位 Copy 后双 Enter 选中子菜单首项（通常是 Copy URL）
-    t := A_TickCount
-    if DevTools_WaitAndInvokeMenuItem("copy", mx, my, 3, "", allowFullScan)
+    if DevTools_WaitAndInvokeMenuItem("copy", mx, my, DEVTOOLS_MENU_RETRIES_FAST, DEVTOOLS_MENU_RETRY_SLEEP_MS_FAST, allowFullScan)
     {
-        PerfLog(Format("DevTools_WaitAndInvokeMenuItem(copy) (+{1} ms)", A_TickCount - t))
         Sleep DEVTOOLS_POST_COPY_SLEEP_MS
 
         ; 快速路径：点击 Copy 后，直接双 Enter 选择子菜单首项（通常是 Copy URL）
-        t := A_TickCount
         Send "{Enter}{Enter}"
         ClipWait DEVTOOLS_CLIPWAIT_SEC
         copied := Trim(A_Clipboard)
-        PerfLog(Format("double-enter after copy (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
         if RegExMatch(copied, "i)https?://[^\s]+", &m)
             return m[0]
 
         ; 双 Enter 未命中时，回退到原 URL 菜单查找
-        t := A_TickCount
-        if DevTools_WaitAndInvokeMenuItem("url", mx, my, 3, "", allowFullScan)
+        if DevTools_WaitAndInvokeMenuItem("url", mx, my, DEVTOOLS_MENU_RETRIES_FAST, DEVTOOLS_MENU_RETRY_SLEEP_MS_FAST, allowFullScan)
         {
-            PerfLog(Format("DevTools_WaitAndInvokeMenuItem(url after copy) (+{1} ms)", A_TickCount - t))
-
-            t := A_TickCount
             ClipWait DEVTOOLS_CLIPWAIT_SEC
             copied := Trim(A_Clipboard)
-            PerfLog(Format("ClipWait/Trim after url (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
             if RegExMatch(copied, "i)https?://[^\s]+", &m)
                 return m[0]
         }
     }
-    else
-    {
-        PerfLog(Format("DevTools_WaitAndInvokeMenuItem(copy) failed (+{1} ms)", A_TickCount - t))
-    }
 
     ; 轻量兜底：尝试一级菜单中的 Copy URL（仅局部查找，不做全局扫描）
-    t := A_TickCount
-    if DevTools_WaitAndInvokeMenuItem("url", mx, my, 1, "", false)
+    if DevTools_WaitAndInvokeMenuItem("url", mx, my, 1, DEVTOOLS_MENU_RETRY_SLEEP_MS_FAST, false)
     {
-        PerfLog(Format("DevTools_WaitAndInvokeMenuItem(url direct local-only) (+{1} ms)", A_TickCount - t))
-
-        t := A_TickCount
         ClipWait DEVTOOLS_CLIPWAIT_SEC
         copied := Trim(A_Clipboard)
-        PerfLog(Format("ClipWait/Trim direct url local-only (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
         if RegExMatch(copied, "i)https?://[^\s]+", &m)
             return m[0]
     }
@@ -293,30 +275,21 @@ DevTools_TryCopyURLFromOpenedMenu(mx, my, allowFullScan := true)
     ; 强兜底：放宽重试与等待，兼容慢机器/菜单渲染慢
     PerfLog("enter reliable fallback menu flow")
 
-    t := A_TickCount
     if DevTools_WaitAndInvokeMenuItem("copy", mx, my, DEVTOOLS_MENU_RETRIES_FALLBACK, DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK, allowFullScan)
     {
-        PerfLog(Format("fallback DevTools_WaitAndInvokeMenuItem(copy) (+{1} ms)", A_TickCount - t))
         Sleep 120
 
         ; 可靠模式也优先尝试双 Enter，减少一次菜单扫描
-        t := A_TickCount
         Send "{Enter}{Enter}"
         ClipWait DEVTOOLS_CLIPWAIT_SEC_FALLBACK
         copied := Trim(A_Clipboard)
-        PerfLog(Format("fallback double-enter after copy (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
         if RegExMatch(copied, "i)https?://[^\s]+", &m)
             return m[0]
 
-        t := A_TickCount
         if DevTools_WaitAndInvokeMenuItem("url", mx, my, DEVTOOLS_MENU_RETRIES_FALLBACK, DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK, allowFullScan)
         {
-            PerfLog(Format("fallback DevTools_WaitAndInvokeMenuItem(url after copy) (+{1} ms)", A_TickCount - t))
-
-            t := A_TickCount
             ClipWait DEVTOOLS_CLIPWAIT_SEC_FALLBACK
             copied := Trim(A_Clipboard)
-            PerfLog(Format("fallback ClipWait/Trim after url (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
             if RegExMatch(copied, "i)https?://[^\s]+", &m)
                 return m[0]
         }
@@ -398,30 +371,7 @@ DevTools_OpenContextMenuOnSelectedRequest(&mx, &my)
     if !row
         return false
 
-    try br := row.BoundingRectangle
-    catch
-        return false
-
-    mx := br.l + ((br.r - br.l) // 2)
-    my := br.t + ((br.b - br.t) // 2)
-
-    try
-    {
-        row.Click("Right")
-        Sleep 180
-        return true
-    }
-    catch
-    {
-    }
-
-    ; 兼容某些页面/控件，回退到屏幕坐标右键
-    MouseGetPos &oldX, &oldY
-    MouseMove mx, my, 0
-    Click "Right"
-    MouseMove oldX, oldY, 0
-    Sleep 180
-    return true
+    return DevTools_OpenContextMenuOnRow(row, &mx, &my, 180)
 }
 
 DevTools_GetFocusedRequestRowElement()
@@ -463,6 +413,11 @@ DevTools_OpenContextMenuOnFocusedOrSelectedRequest(&mx, &my)
     if !row
         return false
 
+    return DevTools_OpenContextMenuOnRow(row, &mx, &my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
+}
+
+DevTools_OpenContextMenuOnRow(row, &mx, &my, waitMs)
+{
     try br := row.BoundingRectangle
     catch
         return false
@@ -473,15 +428,14 @@ DevTools_OpenContextMenuOnFocusedOrSelectedRequest(&mx, &my)
     try
     {
         row.Click("Right")
-        Sleep DEVTOOLS_CONTEXTMENU_SLEEP_MS
+        Sleep waitMs
         return true
     }
     catch
     {
     }
 
-    DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
-    return true
+    return DevTools_OpenContextMenuAtPoint(mx, my, waitMs)
 }
 
 DevTools_OpenContextMenuAtPoint(mx, my, waitMs := 120)
@@ -547,12 +501,25 @@ DevTools_InvokeBestMenuItem(mode, mx, my, allowFullScan := true)
     ; 优先在焦点和鼠标附近做局部查找，避免全桌面 Subtree 扫描
     anchors := []
 
-    ; 命中缓存时可直接从上次成功锚点开始查找，减少 full-scan 触发概率
+    ; 命中缓存时先单独尝试，若失败则本轮禁用缓存避免重复命中空耗
     cachedAnchor := DevTools_GetCachedMenuAnchor(mode, mx, my)
     if IsObject(cachedAnchor)
     {
-        anchors.Push(cachedAnchor)
-        PerfLog("DevTools_InvokeBestMenuItem cache-anchor hit")
+        best := DevTools_FindBestMenuItemNearAnchor(cachedAnchor, cond, mode, mx, my)
+        if IsObject(best)
+            return DevTools_ClickOrInvoke(best, mode, mx, my)
+
+        if allowFullScan
+        {
+            best := DevTools_FindBestMenuItemNearAnchor(cachedAnchor, cond, mode, mx, my, 980, 760)
+            if IsObject(best)
+            {
+                PerfLog("DevTools_InvokeBestMenuItem fallback anchor-wide-scan")
+                return DevTools_ClickOrInvoke(best, mode, mx, my)
+            }
+        }
+
+        DevTools_DisableMenuCacheForCurrentRound(mode)
     }
 
     try
@@ -619,6 +586,8 @@ DevTools_GetCachedMenuAnchor(mode, mx, my)
     global DEVTOOLS_MENU_CACHE_TTL_MS
     global DEVTOOLS_MENU_CACHE_DRIFT_X
     global DEVTOOLS_MENU_CACHE_DRIFT_Y
+    global DEVTOOLS_MENU_CALL_ROUND
+    global DEVTOOLS_MENU_CACHE_DISABLED_ROUND
 
     if !IsObject(DEVTOOLS_MENU_ANCHOR_CACHE)
         return ""
@@ -631,6 +600,13 @@ DevTools_GetCachedMenuAnchor(mode, mx, my)
         return ""
 
     slotName := (mode = "url") ? "url" : "copy"
+
+    if IsObject(DEVTOOLS_MENU_CACHE_DISABLED_ROUND)
+    {
+        if (DEVTOOLS_MENU_CACHE_DISABLED_ROUND.%slotName% = DEVTOOLS_MENU_CALL_ROUND)
+            return ""
+    }
+
     slot := DEVTOOLS_MENU_ANCHOR_CACHE.%slotName%
     if !IsObject(slot)
         return ""
@@ -649,6 +625,18 @@ DevTools_GetCachedMenuAnchor(mode, mx, my)
         return ""
 
     return IsObject(anchor) ? anchor : ""
+}
+
+DevTools_DisableMenuCacheForCurrentRound(mode)
+{
+    global DEVTOOLS_MENU_CALL_ROUND
+    global DEVTOOLS_MENU_CACHE_DISABLED_ROUND
+
+    slotName := (mode = "url") ? "url" : "copy"
+    if !IsObject(DEVTOOLS_MENU_CACHE_DISABLED_ROUND)
+        DEVTOOLS_MENU_CACHE_DISABLED_ROUND := {copy: 0, url: 0}
+
+    DEVTOOLS_MENU_CACHE_DISABLED_ROUND.%slotName% := DEVTOOLS_MENU_CALL_ROUND
 }
 
 DevTools_RememberMenuAnchor(mode, item, mx, my)
