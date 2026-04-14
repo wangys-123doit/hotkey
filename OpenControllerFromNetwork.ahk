@@ -307,7 +307,7 @@ PerfLog(msg)
 
     line := Format("[{1}] {2}`n", A_TickCount, msg)
     OutputDebug line
-    FileAppend line, A_Temp "\\ahk_devtools_perf.log", "UTF-8"
+    FileAppend line, A_ScriptDir "\\ahk_devtools_perf.log", "UTF-8"
 }
 
 DevTools_GetSelectedRequestRowElement()
