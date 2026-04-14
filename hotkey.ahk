@@ -58,6 +58,62 @@ global D_Programs := RegExReplace(A_ProgramFiles, "(?i)^C:", "D:")
 ; 获取 C:\Users\用户名\AppData\Local
 ;~ global LocalPath := EnvGet("LOCALAPPDATA")
 
+SwapProgramsPrefix(path) {
+    if InStr(path, A_ProgramsCommon, false) = 1 {
+        return A_Programs SubStr(path, StrLen(A_ProgramsCommon) + 1)
+    }
+
+    if InStr(path, A_Programs, false) = 1 {
+        return A_ProgramsCommon SubStr(path, StrLen(A_Programs) + 1)
+    }
+
+    return ""
+}
+
+RunAppPathWithPrefixFallback(path) {
+    ; 协议路径（如 ms-phone: / obsidian://）不走文件存在判断，直接尝试运行
+    if (RegExMatch(path, "i)^[a-z][a-z0-9+.-]*:(//)?") && !RegExMatch(path, "i)^[a-z]:\\")) {
+        try {
+            Run path
+            return true
+        } catch Error as e {
+            MsgBox("协议启动失败：`n" path "`n`n" e.Message, "启动失败", 16)
+            return false
+        }
+    }
+
+    primary := path
+    alternate := SwapProgramsPrefix(primary)
+
+    if FileExist(primary) {
+        try {
+            Run primary
+            return true
+        } catch Error as e {
+            MsgBox("启动失败：`n" primary "`n`n" e.Message, "启动失败", 16)
+            return false
+        }
+    }
+
+    if (alternate != "" && FileExist(alternate)) {
+        try {
+            Run alternate
+            return true
+        } catch Error as e {
+            MsgBox("启动失败：`n" alternate "`n`n" e.Message, "启动失败", 16)
+            return false
+        }
+    }
+
+    if (alternate != "") {
+        MsgBox("路径不存在：`n1) " primary "`n2) " alternate, "启动失败", 16)
+    } else {
+        MsgBox("路径不存在：`n" primary, "启动失败", 16)
+    }
+
+    return false
+}
+
 ; 开关窗口函数，判断窗口激活状态并执行显示隐藏操作
 ; ahk_exe:exe程序名
 ; APP_PATH:程序路径
@@ -70,7 +126,7 @@ ToggleWindow(ahk_exe, APP_PATH) {
             WinActivate
         }
     } else {
-        Run APP_PATH
+        RunAppPathWithPrefixFallback(APP_PATH)
     }
 }
 ToggleWindowByTitle(ahk_exe, WinTitle, APP_PATH) {
@@ -82,7 +138,7 @@ ToggleWindowByTitle(ahk_exe, WinTitle, APP_PATH) {
             WinActivate
         }
     } else {
-        Run APP_PATH
+        RunAppPathWithPrefixFallback(APP_PATH)
     }
 
 }
@@ -99,7 +155,7 @@ ToggleWindow2(ahk_exe, WinTitle, APP_PATH) {
             WinActivate
         }
     } else {
-        Run APP_PATH
+        RunAppPathWithPrefixFallback(APP_PATH)
     }
 }
 ; 开关窗口函数，判断窗口激活状态并执行显示隐藏操作
@@ -551,7 +607,7 @@ LWin & z::
             }
         }
     } else {
-        Run APP_PATH
+        RunAppPathWithPrefixFallback(APP_PATH)
     }
 }
 ; Win + F4热键打开小红书
@@ -1058,7 +1114,7 @@ isProxy := 0  ; 初始值为 0
     } else {
 
         APP_PATH := D_Programs "\Clash\Clash for Windows.exe"
-        Run APP_PATH  ; Open a new Notepad window
+        RunAppPathWithPrefixFallback(APP_PATH)  ; Open a new Notepad window
 
         if WinWaitActive("ahk_exe " ahk_exe,,0.5){
             toggleProxy()
@@ -1681,7 +1737,7 @@ IsRdpContext() {
             }
         }
     } else {
-        Run APP_PATH
+        RunAppPathWithPrefixFallback(APP_PATH)
     }
 }
 
@@ -1726,7 +1782,7 @@ IsRdpContext() {
             WinActivate
         }
     } else {
-        Run APP_PATH
+        RunAppPathWithPrefixFallback(APP_PATH)
     }
     ;~ ToggleWindow2(ahk_exe, WinTitle, APP_PATH)
 }
