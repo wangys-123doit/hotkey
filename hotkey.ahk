@@ -637,7 +637,7 @@ LWin & z::
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+F7打开AdminRadiator
-#F7::
+/* #F7::
 {
     ahk_class := "FLUTTER_RUNNER_WIN32_WINDOW"
     UniqueID := WinExist("ahk_class " ahk_class)
@@ -653,9 +653,9 @@ LWin & z::
         ; 使用 schtasks 命令启动任务
         Run("schtasks /run /tn " taskName,"","Hide")
     }
-}
+} */
 ; Win + f8热键打开localsend
-#F8::
+#F9::
 {
     ahk_exe := "localsend_app.exe"
     APP_PATH := A_Programs "\LocalSend.lnk"
@@ -851,9 +851,13 @@ CapsLock::
     lastPressTime := currentTime ; 更新最后按下的时间
 } */
 
+; LCtrl & CapsLock:: ; Lctrl+CapsLock
+; {
+
+; }
+
 
 ; 粘贴热键
-LCtrl & CapsLock:: ; Lctrl+CapsLock
 ~LCtrl & SC163:: ;Lctrl+Fn
 ~LButton & CapsLock:: ;鼠标左键+fn键
 {
@@ -1636,8 +1640,19 @@ openVSCode(ahkExe, appPath, workspace := "") {
 
 LaunchVSCodeAsStandardUser(appPath, workspace := "") {
     try {
-        if !FileExist(appPath) {
-            throw Error("VS Code 路径不存在: " appPath)
+        primary := appPath
+        alternate := SwapProgramsPrefix(primary)
+
+        launchPath := ""
+        if FileExist(primary) {
+            launchPath := primary
+        } else if (alternate != "" && FileExist(alternate)) {
+            launchPath := alternate
+        } else {
+            if (alternate != "") {
+                throw Error("VS Code 路径不存在:`n1) " primary "`n2) " alternate)
+            }
+            throw Error("VS Code 路径不存在:`n" primary)
         }
 
         args := "--reuse-window"
@@ -1645,38 +1660,65 @@ LaunchVSCodeAsStandardUser(appPath, workspace := "") {
             args .= " " QuoteArg(workspace)
         }
 
-        ; 获取 explorer.exe 句柄（关键：它是普通权限）
-        explorerHwnd := WinExist("ahk_class CabinetWClass")
-        if !explorerHwnd {
-            explorerHwnd := WinExist("ahk_class ExploreWClass")
+        launchTarget := ResolveShortcutTarget(launchPath)
+        if !LaunchViaLimitedScheduledTask(launchTarget, args) {
+            throw Error("无法通过任务计划（LIMITED）启动 VS Code。")
         }
-
-        if explorerHwnd {
-            shellWindows := ComObject("Shell.Application").Windows
-            for window in shellWindows {
-                try {
-                    if (window.HWND = explorerHwnd) {
-                        window.Document.Application.ShellExecute(
-                            appPath,
-                            args,
-                            "",
-                            "open",
-                            1
-                        )
-                        return
-                    }
-                } catch {
-                    continue
-                }
-            }
-        }
-
-        ; fallback（兜底）
-        Run(appPath " " args)
-
-    } catch {
+    } catch Error as e {
         MsgBox "启动 VSCode 失败:`n" e.Message, "错误", "Iconx"
     }
+}
+
+LaunchViaLimitedScheduledTask(target, args := "") {
+    static taskName := "AHK_LaunchVSCode_Unelevated"
+
+    taskRun := '\"' target '\"'
+    if (args != "") {
+        taskRun .= " " args
+    }
+
+    createCmd := 'schtasks /create /tn "' taskName '" /tr "' taskRun '" /sc ONCE /st 00:00 /rl LIMITED /it /f'
+    runCmd := 'schtasks /run /tn "' taskName '"'
+
+    createExitCode := RunWait(createCmd, , "Hide")
+    if (createExitCode != 0) {
+        return false
+    }
+
+    runExitCode := RunWait(runCmd, , "Hide")
+    return (runExitCode = 0)
+}
+
+ShellExecuteAsStandardUser(target, args := "", workDir := "") {
+    try {
+        if (workDir = "") {
+            SplitPath(target, , &workDir)
+        }
+
+        ; 关键点：通过 Shell.Application（Explorer 进程）发起，保持普通权限
+        shellApp := ComObject("Shell.Application")
+        shellApp.ShellExecute(target, args, workDir, "open", 1)
+        return true
+    } catch {
+        return false
+    }
+}
+
+ResolveShortcutTarget(path) {
+    if !RegExMatch(path, "i)\.lnk$") {
+        return path
+    }
+
+    try {
+        shortcut := ComObject("WScript.Shell").CreateShortcut(path)
+        target := shortcut.TargetPath
+        if (target != "" && FileExist(target)) {
+            return target
+        }
+    } catch {
+    }
+
+    return path
 }
 
 QuoteArg(s) {
@@ -1832,10 +1874,10 @@ global APP_DIR := A_ScriptDir "\apps"
 
 
 global AppMgr := {}
-#f10::
-{
-	GuiAppManager()
-}
+; #f10::
+; {
+; 	GuiAppManager()
+; }
 
 GuiAppManager() {
     global CONFIG, AppMgr
