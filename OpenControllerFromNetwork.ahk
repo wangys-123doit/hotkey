@@ -13,6 +13,14 @@ global DEVTOOLS_CLIPWAIT_SEC := 0.2
 global DEVTOOLS_MENU_RETRIES_FALLBACK := 6
 global DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK := 70
 global DEVTOOLS_CLIPWAIT_SEC_FALLBACK := 0.45
+global DEVTOOLS_MENU_CACHE_TTL_MS := 15000
+global DEVTOOLS_MENU_CACHE_DRIFT_X := 520
+global DEVTOOLS_MENU_CACHE_DRIFT_Y := 420
+global DEVTOOLS_MENU_ANCHOR_CACHE := {
+    hwnd: 0,
+    copy: {valid: false, x: 0, y: 0, mx: 0, my: 0, ts: 0},
+    url: {valid: false, x: 0, y: 0, mx: 0, my: 0, ts: 0}
+}
 
 ;~ 2、主入口
 ^!g::OpenControllerFromNetwork()
@@ -152,31 +160,16 @@ DevTools_CopyURLViaContextMenu()
     clipBak := A_Clipboard
     A_Clipboard := ""
 
-    ; 快速路径：若已选中请求行，则优先在该行中点右键（更可靠且避免额外扫描）
-    row := DevTools_GetSelectedRequestRowElement()
-    if IsObject(row)
+    ; 快速路径：优先在聚焦/选中请求行上右键；失败再退回鼠标位置
+    MouseGetPos &mx, &my
+    t := A_TickCount
+    opened := DevTools_OpenContextMenuOnFocusedOrSelectedRequest(&mx, &my)
+    if opened
     {
-        try br := row.BoundingRectangle
-        catch
-            br := ""
-
-        if IsObject(br) || br != ""
-        {
-            mx := br.l + ((br.r - br.l) // 2)
-            my := br.t + ((br.b - br.t) // 2)
-            DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
-            PerfLog("fast path: open menu on selected row")
-        }
-        else
-        {
-            MouseGetPos &mx, &my
-            DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
-            PerfLog(Format("fast path right click (+{1} ms sleep)", DEVTOOLS_CONTEXTMENU_SLEEP_MS))
-        }
+        PerfLog(Format("fast path row right click (+{1} ms)", A_TickCount - t))
     }
     else
     {
-        MouseGetPos &mx, &my
         DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
         PerfLog(Format("fast path right click (+{1} ms sleep)", DEVTOOLS_CONTEXTMENU_SLEEP_MS))
     }
@@ -191,17 +184,6 @@ DevTools_CopyURLViaContextMenu()
     }
 
     Send "{Esc}"
-
-    ; 极限兜底：聚焦鼠标所在请求行后直接 Ctrl+C
-    t := A_TickCount
-    copiedUrl := DevTools_TryCopyURLViaCtrlCAtMouse(mx, my)
-    PerfLog(Format("ctrl+c fallback (+{1} ms) len={2}", A_TickCount - t, StrLen(copiedUrl)))
-    if (copiedUrl != "")
-    {
-        A_Clipboard := clipBak
-        PerfLog(Format("DevTools_CopyURLViaContextMenu done total={1} ms (ctrl+c fallback)", A_TickCount - totalStart))
-        return copiedUrl
-    }
 
     ; 次级兜底：尝试按选中请求行打开菜单后再次复制
     t := A_TickCount
@@ -219,6 +201,17 @@ DevTools_CopyURLViaContextMenu()
         }
     }
 
+    ; 极限兜底：聚焦鼠标所在请求行后直接 Ctrl+C
+    t := A_TickCount
+    copiedUrl := DevTools_TryCopyURLViaCtrlCAtMouse(mx, my)
+    PerfLog(Format("ctrl+c fallback (+{1} ms) len={2}", A_TickCount - t, StrLen(copiedUrl)))
+    if (copiedUrl != "")
+    {
+        A_Clipboard := clipBak
+        PerfLog(Format("DevTools_CopyURLViaContextMenu done total={1} ms (ctrl+c fallback)", A_TickCount - totalStart))
+        return copiedUrl
+    }
+
     ; 取消菜单
     Send "{Esc}"
     A_Clipboard := clipBak
@@ -234,7 +227,21 @@ DevTools_TryCopyURLFromOpenedMenu(mx, my, allowFullScan := true)
     global DEVTOOLS_MENU_RETRY_SLEEP_MS_FALLBACK
     global DEVTOOLS_CLIPWAIT_SEC_FALLBACK
 
-    ; 常规最快路径：先 Copy 再双 Enter 选中子菜单首项（通常是 Copy URL）
+    ; 快速键优先：菜单打开后连按三次 C，尽量绕过 UIA 查找
+    t := A_TickCount
+    Send "c"
+    Sleep 40
+    Send "c"
+    Sleep 40
+    Send "c"
+    Sleep DEVTOOLS_POST_COPY_SLEEP_MS
+    ClipWait DEVTOOLS_CLIPWAIT_SEC
+    copied := Trim(A_Clipboard)
+    PerfLog(Format("quick-key triple-C (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
+    if RegExMatch(copied, "i)https?://[^\s]+", &m)
+        return m[0]
+
+    ; 常规路径：UIA 定位 Copy 后双 Enter 选中子菜单首项（通常是 Copy URL）
     t := A_TickCount
     if DevTools_WaitAndInvokeMenuItem("copy", mx, my, 3, "", allowFullScan)
     {
@@ -268,20 +275,6 @@ DevTools_TryCopyURLFromOpenedMenu(mx, my, allowFullScan := true)
     {
         PerfLog(Format("DevTools_WaitAndInvokeMenuItem(copy) failed (+{1} ms)", A_TickCount - t))
     }
-
-    ; 快速键优先：在菜单打开后连按三次 C（通常能选中 Copy / 复制），提高对多语言菜单的兼容性
-    t := A_TickCount
-    Send "c"
-    Sleep 40
-    Send "c"
-    Sleep 40
-    Send "c"
-    Sleep DEVTOOLS_POST_COPY_SLEEP_MS
-    ClipWait DEVTOOLS_CLIPWAIT_SEC
-    copied := Trim(A_Clipboard)
-    PerfLog(Format("quick-key triple-C (+{1} ms) len={2}", A_TickCount - t, StrLen(copied)))
-    if RegExMatch(copied, "i)https?://[^\s]+", &m)
-        return m[0]
 
     ; 轻量兜底：尝试一级菜单中的 Copy URL（仅局部查找，不做全局扫描）
     t := A_TickCount
@@ -431,6 +424,66 @@ DevTools_OpenContextMenuOnSelectedRequest(&mx, &my)
     return true
 }
 
+DevTools_GetFocusedRequestRowElement()
+{
+    try focused := UIA.GetFocusedElement()
+    catch
+        return ""
+
+    if !IsObject(focused)
+        return ""
+
+    el := focused
+    loop 8
+    {
+        try ct := el.CurrentControlType
+        catch
+            break
+
+        if (ct = UIA.Type.DataItem)
+            return el
+
+        try el := UIA.TreeWalkerTrue.GetParentElement(el)
+        catch
+            break
+
+        if !IsObject(el)
+            break
+    }
+
+    return ""
+}
+
+DevTools_OpenContextMenuOnFocusedOrSelectedRequest(&mx, &my)
+{
+    row := DevTools_GetFocusedRequestRowElement()
+    if !row
+        row := DevTools_GetSelectedRequestRowElement()
+
+    if !row
+        return false
+
+    try br := row.BoundingRectangle
+    catch
+        return false
+
+    mx := br.l + ((br.r - br.l) // 2)
+    my := br.t + ((br.b - br.t) // 2)
+
+    try
+    {
+        row.Click("Right")
+        Sleep DEVTOOLS_CONTEXTMENU_SLEEP_MS
+        return true
+    }
+    catch
+    {
+    }
+
+    DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
+    return true
+}
+
 DevTools_OpenContextMenuAtPoint(mx, my, waitMs := 120)
 {
     MouseGetPos &oldX, &oldY
@@ -494,6 +547,14 @@ DevTools_InvokeBestMenuItem(mode, mx, my, allowFullScan := true)
     ; 优先在焦点和鼠标附近做局部查找，避免全桌面 Subtree 扫描
     anchors := []
 
+    ; 命中缓存时可直接从上次成功锚点开始查找，减少 full-scan 触发概率
+    cachedAnchor := DevTools_GetCachedMenuAnchor(mode, mx, my)
+    if IsObject(cachedAnchor)
+    {
+        anchors.Push(cachedAnchor)
+        PerfLog("DevTools_InvokeBestMenuItem cache-anchor hit")
+    }
+
     try
     {
         focused := UIA.GetFocusedElement()
@@ -522,7 +583,21 @@ DevTools_InvokeBestMenuItem(mode, mx, my, allowFullScan := true)
     {
         best := DevTools_FindBestMenuItemNearAnchor(anchor, cond, mode, mx, my)
         if IsObject(best)
-            return DevTools_ClickOrInvoke(best)
+            return DevTools_ClickOrInvoke(best, mode, mx, my)
+    }
+
+    if allowFullScan
+    {
+        ; 先做锚点子树的宽范围扫描，减少直接全桌面扫描的概率
+        for anchor in anchors
+        {
+            best := DevTools_FindBestMenuItemNearAnchor(anchor, cond, mode, mx, my, 980, 760)
+            if IsObject(best)
+            {
+                PerfLog("DevTools_InvokeBestMenuItem fallback anchor-wide-scan")
+                return DevTools_ClickOrInvoke(best, mode, mx, my)
+            }
+        }
     }
 
     if allowFullScan
@@ -532,13 +607,81 @@ DevTools_InvokeBestMenuItem(mode, mx, my, allowFullScan := true)
         root := UIA.GetRootElement()
         best := DevTools_FindBestMenuItemInElement(root, cond, mode, mx, my, 1100, 760)
         if IsObject(best)
-            return DevTools_ClickOrInvoke(best)
+            return DevTools_ClickOrInvoke(best, mode, mx, my)
     }
 
     return false
 }
 
-DevTools_FindBestMenuItemNearAnchor(anchor, cond, mode, mx, my)
+DevTools_GetCachedMenuAnchor(mode, mx, my)
+{
+    global DEVTOOLS_MENU_ANCHOR_CACHE
+    global DEVTOOLS_MENU_CACHE_TTL_MS
+    global DEVTOOLS_MENU_CACHE_DRIFT_X
+    global DEVTOOLS_MENU_CACHE_DRIFT_Y
+
+    if !IsObject(DEVTOOLS_MENU_ANCHOR_CACHE)
+        return ""
+
+    hwnd := WinActive("A")
+    if !hwnd
+        return ""
+
+    if (DEVTOOLS_MENU_ANCHOR_CACHE.hwnd != hwnd)
+        return ""
+
+    slotName := (mode = "url") ? "url" : "copy"
+    slot := DEVTOOLS_MENU_ANCHOR_CACHE.%slotName%
+    if !IsObject(slot)
+        return ""
+
+    if !slot.valid
+        return ""
+
+    if (A_TickCount - slot.ts > DEVTOOLS_MENU_CACHE_TTL_MS)
+        return ""
+
+    if (Abs(slot.mx - mx) > DEVTOOLS_MENU_CACHE_DRIFT_X || Abs(slot.my - my) > DEVTOOLS_MENU_CACHE_DRIFT_Y)
+        return ""
+
+    try anchor := UIA.ElementFromPoint(slot.x, slot.y,, 0)
+    catch
+        return ""
+
+    return IsObject(anchor) ? anchor : ""
+}
+
+DevTools_RememberMenuAnchor(mode, item, mx, my)
+{
+    global DEVTOOLS_MENU_ANCHOR_CACHE
+
+    if !IsObject(item)
+        return
+
+    try br := item.BoundingRectangle
+    catch
+        return
+
+    cx := br.l + ((br.r - br.l) // 2)
+    cy := br.t + ((br.b - br.t) // 2)
+
+    slotName := (mode = "url") ? "url" : "copy"
+    slot := DEVTOOLS_MENU_ANCHOR_CACHE.%slotName%
+    if !IsObject(slot)
+        slot := {}
+
+    slot.valid := true
+    slot.x := cx
+    slot.y := cy
+    slot.mx := mx
+    slot.my := my
+    slot.ts := A_TickCount
+
+    DEVTOOLS_MENU_ANCHOR_CACHE.%slotName% := slot
+    DEVTOOLS_MENU_ANCHOR_CACHE.hwnd := WinActive("A")
+}
+
+DevTools_FindBestMenuItemNearAnchor(anchor, cond, mode, mx, my, nearX := 500, nearY := 360)
 {
     bases := []
 
@@ -561,7 +704,7 @@ DevTools_FindBestMenuItemNearAnchor(anchor, cond, mode, mx, my)
 
     for base in bases
     {
-        best := DevTools_FindBestMenuItemInElement(base, cond, mode, mx, my, 500, 360)
+        best := DevTools_FindBestMenuItemInElement(base, cond, mode, mx, my, nearX, nearY)
         if IsObject(best)
             return best
     }
@@ -643,11 +786,13 @@ DevTools_ScoreMenuItemName(mode, name)
     return score
 }
 
-DevTools_ClickOrInvoke(item)
+DevTools_ClickOrInvoke(item, mode := "", mx := 0, my := 0)
 {
     try
     {
         item.Click()
+        if (mode != "")
+            DevTools_RememberMenuAnchor(mode, item, mx, my)
         return true
     }
     catch
@@ -657,6 +802,8 @@ DevTools_ClickOrInvoke(item)
     try
     {
         item.Invoke()
+        if (mode != "")
+            DevTools_RememberMenuAnchor(mode, item, mx, my)
         return true
     }
     catch
