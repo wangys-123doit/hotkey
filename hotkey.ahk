@@ -462,6 +462,7 @@ ConvertCharacter() {
         ;~ 判断如果是标点符号则再发送一次shift left 只复制光标前两格标点符号
         Case "…":
         Case "—":
+        Case "、":
             Send "+{Left}"
         ;~ Case "todo":
             ;~ 非标点符号则则发送ctrl+shift left复制整个拼音字母
@@ -473,6 +474,7 @@ ConvertCharacter() {
         SwitchPunctuation(true,lastChar)
         return
     }
+    
      ;~ Chr(34)：双引号，Chr(39)：单引号，Chr(96)：反引号`
     static ENG_PUNCT := ",.;:?!()[]<>\\$" . Chr(34) . Chr(96)
     ; 已经是英文标点
@@ -528,7 +530,7 @@ SwitchPunctuation(cnToEng,char) {
         "】", "]",
         "《", "<",
         "》", ">",
-        "、", "\",
+        "、", "// ", ; 中文顿号替换为代码注释符号
         "“",'"',
         "”",'"',
         "‘","'",
