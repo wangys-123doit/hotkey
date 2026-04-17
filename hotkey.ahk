@@ -8,6 +8,9 @@
 #UseHook true   ; 强制使用键盘钩子
 SetCapsLockState "AlwaysOff"
 
+; 清除重载脚本时可能残留的工具提示
+ToolTip("")
+
 #Include hotkeys_public.ahk
 #Include OpenControllerFromNetwork.ahk
 #Include rdp.ahk
@@ -860,6 +863,7 @@ CapsLock::
 
 
 ; 粘贴热键
+LCtrl & CapsLock:: ; Lctrl+CapsLock
 ~LCtrl & SC163:: ;Lctrl+Fn
 ~LButton & CapsLock:: ;鼠标左键+fn键
 {
@@ -873,11 +877,12 @@ CapsLock::
 ; MButton 智能处理
 ; 判断是否是终端环境
 ; ==============================
-isTerminal() {
+/* isTerminal() {
     return WinActive("ahk_exe mintty.exe")  ; Git Bash
         || WinActive("ahk_exe Xshell.exe")
         || WinActive("ahk_exe WindowsTerminal.exe")
         || WinActive("ahk_exe wezterm.exe")
+        || WinActive("ahk_exe idea64.exe")  ; 终端工具窗口（如 IntelliJ 的 Terminal）
 }
 global g_MButtonLastTick := 0
 
@@ -885,8 +890,8 @@ global g_MButtonLastTick := 0
 *~MButton:: ; 仅在可输入光标下触发粘贴，其它场景保留原生中键
 {
     cursorType := A_Cursor
-    ToolTip 111 . " - " . cursorType    
-    SetTimer(ToolTip, -1000)  ; 1秒后自动关闭提示                
+    ; ToolTip 111 . " - " . cursorType    
+    ; SetTimer(ToolTip, -1000)  ; 1秒后自动关闭提示
     if (cursorType = "Unknown") {
         return
     } else {
@@ -904,7 +909,7 @@ global g_MButtonLastTick := 0
         }
     }
 }
-#HotIf
+#HotIf */
 
 
 

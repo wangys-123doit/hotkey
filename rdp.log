@@ -1,1 +1,7 @@
-﻿
+﻿[2026-04-17 22:52:24] mode=safe host=17 failed=TCP Port 3389 is closed or filtered on 0.0.0.17
+[2026-04-17 22:53:04] mode=safe host=17 failed=TCP Port 3389 is closed or filtered on 0.0.0.17
+[2026-04-17 22:55:14] mode=safe host=17 failed=TCP Port 3389 is closed or filtered on 172.24.80.17
+[2026-04-17 23:02:40] mode=safe host=17 failed=TCP Port 3389 is closed or filtered on 172.24.80.17
+[2026-04-18 01:59:39] mode=safe host=17 failed=TCP Port 3389 is closed or filtered on 172.24.80.17
+[2026-04-18 02:00:11] mode=safe host=17 failed=TCP Port 3389 is closed or filtered on 172.24.80.17
+[2026-04-18 02:00:31] mode=safe host=17 failed=TCP Port 3389 is closed or filtered on 172.24.80.17

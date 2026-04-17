@@ -53,6 +53,14 @@ class RDPConfig {
     )
 }
 
+; =========== 当前主机 -> 目标主机 映射 ===========
+; key: 当前机器的主机名 (A_ComputerName)
+; value: 要连接的目标主机短名/标识 (会传给 ToggleOrConnectRDP)
+global RDPHostMap := Map(
+    ; 示例：把本机 X1 映射到局域网中短主机名 17
+    "X1", "17"
+)
+
 ; ============================================
 ; 核心管理器
 ; ============================================
@@ -155,13 +163,13 @@ class RDPManager {
 ; Win+\：快速直连（最快，不做前置探测）
 #\::
 {
-    ToggleOrConnectRDP("fast", "X1")
+    ConnectMappedRDP("fast")
 }
 
 ; Ctrl+Win+\：安全探测（DNS + 3389 检测后再连接）
 #^\::
 {
-    ToggleOrConnectRDP("safe", "X1")
+    ConnectMappedRDP("safe")
 }
 
 ; win+]:若当前是远程桌面窗口，则最小化该窗口
@@ -319,7 +327,7 @@ GetRootWindow(hwnd) {
     return rootHwnd ? rootHwnd : hwnd
 }
 
-ToggleOrConnectRDP(mode := "fast", targetHost := "X1") {
+ToggleOrConnectRDP(mode := "fast", targetHost := "17") {
     ahk_exe := "mstsc.exe"
 
     if WinExist("ahk_exe " ahk_exe) {
@@ -336,6 +344,19 @@ ToggleOrConnectRDP(mode := "fast", targetHost := "X1") {
     } else {
         ConnectRDPFast(targetHost)
     }
+}
+
+ConnectMappedRDP(mode := "fast") {
+    global RDPHostMap
+
+    currentHost := A_ComputerName
+    if (!RDPHostMap.Has(currentHost)) {
+        MsgBox("未找到当前主机到目标主机的映射: " currentHost, "RDP 提示")
+        return
+    }
+
+    targetHost := RDPHostMap[currentHost]
+    ToggleOrConnectRDP(mode, targetHost)
 }
 
 ConnectRDPFast(targetHost := "X1") {
@@ -358,7 +379,7 @@ ConnectRDPFast(targetHost := "X1") {
     SetTimer(() => ToolTip(), -1000)
 }
 
-ConnectRDPByProbe(targetHost := "X1") {
+ConnectRDPByProbe(targetHost := "17") {
     targetScript := A_ScriptDir "\rdp-connect.ps1"
     if !FileExist(targetScript) {
         MsgBox("错误: 脚本文件路径不存在 - " . targetScript)
