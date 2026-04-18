@@ -20,7 +20,7 @@
 :o:sel2::SELECT * FROM   where col_name = ''
 :o:show1::SHOW CREATE TABLE `
 :o:cre1::CREATE UNIQUE INDEX `uk_group_code` ON lms_group (code) USING BTREE
-:o:log::console.log()
+:o:clog::console.log()
 :*:tr0::truncate -s 0
 :o:ord::ORDER BY update_time desc
 :*:chcp1::chcp 65001
