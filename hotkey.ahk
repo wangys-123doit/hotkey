@@ -1860,13 +1860,56 @@ IsRdpContext() {
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
+
 #F11::
 {
-    ahk_exe := "SciTE.exe"
-	APP_PATH := A_ProgramFiles "\AutoHotkey\SciTE\SciTE.exe"
+    ; logFile := A_ScriptDir "\sleep_debug.log"
+    try {
+        ; FileAppend("[" A_Now "] Hotkey triggered`n", logFile)
+        ; === Step 1: 尝试 Shell 方式 ===
+        try {
+            shell := ComObject("Shell.Application")
+            ; FileAppend("[" A_Now "] Shell object created`n", logFile)
+            ; 注意：Suspend() 在很多系统其实不存在
+            shell.Suspend()
+            ; FileAppend("[" A_Now "] Shell.Suspend() called`n", logFile)
+            ; 给一点时间观察是否真的进入睡眠
+            Sleep 500
+        } catch Error as e {
+            ; FileAppend("[" A_Now "] Shell failed: " e.Message "`n", logFile)
+        }
+        ; === Step 2: Fallback 到 API ===
+        try {
+            result := DllCall("PowrProf\SetSuspendState"
+                , "Int", 0
+                , "Int", 0
+                , "Int", 0)
 
-    ToggleWindow(ahk_exe, APP_PATH)
+            ; FileAppend("[" A_Now "] DllCall result: " result "`n", logFile)
+
+            if (!result) {
+                throw Error("SetSuspendState returned 0")
+            }
+        } catch Error as e {
+            ; FileAppend("[" A_Now "] DllCall failed: " e.Message "`n", logFile)
+            MsgBox "所有方式失败"
+        }
+    } catch Error as e {
+        ; FileAppend("[" A_Now "] Fatal error: " e.Message "`n", logFile)
+    } 
 }
+
+/* #F11::
+{
+    try {
+        shell := ComObject("Shell.Application")
+        shell.Suspend()
+		Sleep 500
+    } catch {
+        ; fallback
+        DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0)
+    }
+} */
 
 #!g::
 {
@@ -2277,3 +2320,65 @@ GetUrlByRightClick(uiElement) {
     }
     return "未获取到链接"
 }
+
+/**
+ * 获取 Chrome DevTools Source 面板当前行号
+ * @returns {Integer} 成功返回行号，失败返回 0
+ */
+GetDevToolsLineNumber() {
+    ; 1. 环境检查：确保 Chrome 处于活动状态
+    if !WinActive("ahk_exe chrome.exe") {
+        return 0
+    }
+
+    ; 保存当前剪贴板，以便后续恢复 (System Guardian: Data Integrity)
+    savedClipboard := ClipboardAll()
+    A_Clipboard := "" 
+
+    try {
+        ; 2. 核心交互逻辑
+        ; 发送 Ctrl+G 打开 "Go to line" 输入框
+        Send("^g")
+        if !ClipWait(1, 1) { ; 等待 UI 响应并自动选中文本
+            Send("^a^c") ; 强制全选并复制
+        } else {
+            Send("^c")
+        }
+        
+        ; 等待剪贴板填充
+        if !ClipWait(0.5) {
+            throw Error("Clipboard timeout")
+        }
+
+        ; 3. 数据解析 (RegEx 提取)
+        ; DevTools 通常显示格式为 "行:列" 或单纯 "行"
+        rawText := A_Clipboard
+        if RegExMatch(rawText, "^\d+", &match) {
+            lineNumber := Integer(match[0])
+        } else {
+            lineNumber := 0
+        }
+
+        ; 4. UI 清理：发送 Esc 关闭跳转框
+        Send("{Esc}")
+        
+        return lineNumber
+
+    } catch Error as err {
+        ; 异常处理与日志建议
+        ; FileAppend(FormatTime() ": " err.Message "`n", "debug.log")
+        return 0
+    } finally {
+        ; 恢复现场
+        A_Clipboard := savedClipboard
+    }
+}
+
+; 示例热键：Ctrl + Alt + L
+^!l:: {
+    line := GetDevToolsLineNumber()
+    if (line > 0) {
+        MsgBox("当前行号: " . line, "DevTools Info", "Iconi T3")
+    }
+}
+
