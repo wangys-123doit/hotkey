@@ -1861,45 +1861,73 @@ IsRdpContext() {
     ToggleWindow(ahk_exe, APP_PATH)
 }
 
-#F11::
+^#F11::
 {
-    ; logFile := A_ScriptDir "\sleep_debug.log"
-    try {
-        ; FileAppend("[" A_Now "] Hotkey triggered`n", logFile)
-        ; === Step 1: 尝试 Shell 方式 ===
-        try {
-            shell := ComObject("Shell.Application")
-            ; FileAppend("[" A_Now "] Shell object created`n", logFile)
-            ; 注意：Suspend() 在很多系统其实不存在
-            shell.Suspend()
-            ; FileAppend("[" A_Now "] Shell.Suspend() called`n", logFile)
-            ; 给一点时间观察是否真的进入睡眠
-            Sleep 500
-        } catch Error as e {
-            ; FileAppend("[" A_Now "] Shell failed: " e.Message "`n", logFile)
-        }
-        ; === Step 2: Fallback 到 API ===
-        try {
-            result := DllCall("PowrProf\SetSuspendState"
-                , "Int", 0
-                , "Int", 0
-                , "Int", 0)
-
-            ; FileAppend("[" A_Now "] DllCall result: " result "`n", logFile)
-
-            if (!result) {
-                throw Error("SetSuspendState returned 0")
-            }
-        } catch Error as e {
-            ; FileAppend("[" A_Now "] DllCall failed: " e.Message "`n", logFile)
-            MsgBox "所有方式失败"
-        }
-    } catch Error as e {
-        ; FileAppend("[" A_Now "] Fatal error: " e.Message "`n", logFile)
-    } 
+    ConfirmAndSuspend()
 }
 
-/* #F11::
+ConfirmAndSuspend() {
+    state := {countdown: 3}
+    state.gui := Gui("+AlwaysOnTop +ToolWindow -MinimizeBox -MaximizeBox", state.countdown "秒后将进入睡眠模式")
+    state.gui.MarginX := 16
+    state.gui.MarginY := 14
+    state.gui.AddText("w280 Center", state.countdown "秒后将进入睡眠模式")
+    state.statusText := state.gui.AddText("w280 Center", state.countdown " 秒后自动执行确定")
+    okBtn := state.gui.AddButton("x92 w90", "确定")
+    cancelBtn := state.gui.AddButton("x+12 w90 Default", "取消")
+
+    executeSuspend(*) {
+        SetTimer(updateCountdown, 0)
+        try state.gui.Destroy()
+        DoSuspend()
+    }
+
+    cancelConfirm(*) {
+        SetTimer(updateCountdown, 0)
+        try state.gui.Destroy()
+    }
+
+    updateCountdown(*) {
+        state.countdown -= 1
+        if (state.countdown <= 0) {
+            executeSuspend()
+            return
+        }
+        state.statusText.Text := state.countdown " 秒后自动执行确定"
+    }
+
+    okBtn.OnEvent("Click", executeSuspend)
+    cancelBtn.OnEvent("Click", cancelConfirm)
+    state.gui.OnEvent("Close", cancelConfirm)
+    state.gui.OnEvent("Escape", cancelConfirm)
+    state.gui.Show("AutoSize Center")
+
+    SetTimer(updateCountdown, 1000)
+}
+
+DoSuspend() {
+    try {
+        shell := ComObject("Shell.Application")
+        shell.Suspend()
+        Sleep 500
+    } catch Error {
+    }
+
+    try {
+        result := DllCall("PowrProf\SetSuspendState"
+            , "Int", 0
+            , "Int", 0
+            , "Int", 0)
+
+        if (!result) {
+            throw Error("SetSuspendState returned 0")
+        }
+    } catch Error {
+        MsgBox "所有方式失败"
+    }
+}
+
+#F11::
 {
     try {
         shell := ComObject("Shell.Application")
@@ -1909,7 +1937,7 @@ IsRdpContext() {
         ; fallback
         DllCall("PowrProf\SetSuspendState", "Int", 0, "Int", 0, "Int", 0)
     }
-} */
+}
 
 #!g::
 {
