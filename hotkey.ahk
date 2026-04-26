@@ -699,7 +699,8 @@ LWin & z::
 }
 */
 ; Win + ctrl + r热键打开powershell
-#^r::
+; #^r::
+#r::
 {
 	ahk_exe := "WindowsTerminal.exe"
 	APP_PATH := A_ProgramsCommon "\PowerShell\PowerShell 7 (x64).lnk"
@@ -1799,8 +1800,10 @@ IsRdpContext() {
 }
 #c::
 {
-	ahk_exe := "Xshell.exe"
-	APP_PATH := A_ProgramFiles " (x86)\NetSarang\Xshell 8\Xshell.exe"
+	; ahk_exe := "Xshell.exe"
+	; APP_PATH := A_ProgramFiles " (x86)\NetSarang\Xshell 8\Xshell.exe"
+	ahk_exe := "Qoder.exe"
+    APP_PATH := A_ProgramsCommon "\Qoder\Qoder.lnk"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
