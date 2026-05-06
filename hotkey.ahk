@@ -2397,7 +2397,7 @@ GetDevToolsLineNumber() {
 
     } catch Error as err {
         ; 异常处理与日志建议
-        ; FileAppend(FormatTime() ": " err.Message "`n", "debug.log")
+        FileAppend(FormatTime() ": " err.Message "`n", "debug.log")
         return 0
     } finally {
         ; 恢复现场
@@ -2411,5 +2411,24 @@ GetDevToolsLineNumber() {
     if (line > 0) {
         MsgBox("当前行号: " . line, "DevTools Info", "Iconi T3")
     }
+}
+
+; 当按下 Alt+Q 时，手动检测弹窗，若失败则强行唤醒 URL
+^!q::
+{
+    ; 发送原有的快捷键给 Chrome
+    ; Send("!q")
+    
+    ; 延迟等待弹窗出现 (QuicKey 窗口通常有特定的标题或类名)
+    ; if !WinWait("ahk_exe chrome.exe", , 0.5) 
+    ; {
+        ; 如果没检测到弹窗，通过命令行强制预热 popup.html
+        ; 这样会强制 Chrome 刷新资源映射并唤醒 Service Worker
+      ;   Run("chrome.exe --new-window chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false")
+    ; }
+	
+	
+	; 使用当前 Chrome 窗口另起标签页执行
+Run("chrome.exe chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false")
 }
 
