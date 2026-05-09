@@ -117,6 +117,16 @@ RunAppPathWithPrefixFallback(path) {
     return false
 }
 
+BlockWinPFor(durationMs := 300) {
+    static handler := (*) => 0
+    Hotkey("#p", handler, "On")
+    SetTimer(() => Hotkey("#p", handler, "Off"), -durationMs)
+}
+
+; #p::return
+; 微信hwnd缓存值
+global g_weixinHwnd := 0
+
 ; 开关窗口函数，判断窗口激活状态并执行显示隐藏操作
 ; ahk_exe:exe程序名
 ; APP_PATH:程序路径
@@ -253,20 +263,37 @@ GetMainWindowByExe(ahk_exe,winTitle) {
 ; 有道词典复制粘贴并查询翻译
 pasteEnter(){
     ;~ 先设置长文本编辑器获取焦点
-   ControlFocus "Chrome_WidgetWin_01", "ahk_class YodaoMainWndClass"  ; 这里的 "RICHEDIT50W2" 为控件名称，可以根据实际情况修改
-
-    Send "^a"
-    ; 这里的间隔是给 UI 渲染全选高亮的时间
-    Sleep 50
-
-    ; 将内容放入剪贴板并等待它准备就绪
-    ; 如果是从剪贴板粘贴，确保剪贴板不是空的
-    if ClipWait(1) {
-        Send "^v"
+    ; 加入重试机制 (try...catch + Loop)，防止Chrome_WidgetWin_01还没来得及完全初始化，导致ControlFocus失败
+    success := false
+    Loop 30 {
+        try {
+            targetHwnd := ControlGetHwnd("Chrome_WidgetWin_01", "ahk_class YodaoMainWndClass")
+            ControlFocus(targetHwnd)
+            
+            focusedCtrl := ControlGetFocus("ahk_class YodaoMainWndClass")
+            focusedHwnd := ControlGetHwnd(focusedCtrl, "ahk_class YodaoMainWndClass")
+            
+            if (targetHwnd == focusedHwnd) {
+                success := true
+                break
+            }
+        } catch {
+            ; 遇到错误时忽略，继续下一次重试
+        }
+        Sleep 100
     }
 
-    Sleep 50
-    Send "{Enter}"
+    if (!success) {
+        return
+    }
+
+    ; 确保剪贴板内包含内容后再继续
+    if ClipWait(1) {
+        ; 使用 SendInput 将按键一次性按顺序送入系统输入队列
+        ; Chromium 内核会按顺序同步处理队列中的按键，无需手动 Sleep
+        SendInput("^a^v{Enter}")
+    }
+    
     return
 }
 
@@ -742,13 +769,7 @@ LWin & z::
 	APP_PATH := A_ProgramsCommon "\Microsoft Edge.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
-; Win + `热键打开Obsidian
-#`::
-{
-	ahk_exe := "Obsidian.exe"
-	APP_PATH := "D:\Obsidian\Obsidian.exe"
-    ToggleWindow(ahk_exe, APP_PATH)
-}
+
 class ScriptLifecycle
 {
     static ENV_KEY := "AHK_SCRIPT_RELOAD"
@@ -1083,7 +1104,6 @@ openYoudao(){
 			    ;~ Click(clickX, clickY)
     ; 发送 Tab 键切换焦点
     ahk_exe := "YoudaoDict.exe"
-	;~ APP_PATH := "C:\Users\X1\AppData\Local\youdao\dict\Application\YoudaoDict.exe"
     ;~ 如果已启动
     if WinExist("ahk_exe " ahk_exe){
         WinActivate("ahk_exe " ahk_exe)
@@ -1093,9 +1113,11 @@ openYoudao(){
 
     } else {
         ;~ 未启动时发送指令键启动程序
-        Send("^{LWin down}3^{LWin up}")
+        ; Send("^{LWin down}3^{LWin up}")
+        APP_PATH := A_Programs "\有道\网易有道翻译\网易有道翻译.lnk"
+        RunAppPathWithPrefixFallback(APP_PATH)
         ;~ 等待程序启动
-        Sleep 3000
+        WinWait("ahk_exe " ahk_exe)
 
         if WinExist("ahk_exe " ahk_exe){
             WinActivate("ahk_exe " ahk_exe)
@@ -1125,7 +1147,7 @@ isProxy := 0  ; 初始值为 0
 
     } else {
 
-        APP_PATH := D_Programs "\Clash\Clash for Windows.exe"
+        APP_PATH := A_Programs "\有道\网易有道翻译\网易有道翻译.lnk"
         RunAppPathWithPrefixFallback(APP_PATH)  ; Open a new Notepad window
 
         if WinWaitActive("ahk_exe " ahk_exe,,0.5){
@@ -1760,6 +1782,53 @@ IsRdpContext() {
         || WinActive("ahk_class TscShellWndClass")
 }
 
+; [新加] 复制并在浏览器搜索
+#f10::
+{
+    ; 释放可能按下的修饰键，避免产生意外的组合键（如 Win+RAlt 等）
+    Send("{LWin up}{RWin up}{Ctrl up}{Shift up}{Alt up}")
+
+    ; 1. 清空剪贴板并直接发送复制指令（绕过 CapsLock 钩子，直接执行复制动作更稳定）
+    A_Clipboard := ""
+    if WinActive("ahk_group ShellGroup") {
+        SendEvent("{Ctrl Down}{Insert}{Ctrl Up}")
+    } else {
+        SendEvent("^{c}")
+    }
+    
+    if !ClipWait(1) {
+        ToolTip("未能获取到选中文本")
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    ; 2. 直接发送打开浏览器的快捷键 (Win+2)
+    ; 使用 AHK 原生的 #2 语法，防止拆分发送导致 Windows 识别为按下了单独的 Win 键（弹出开始菜单）
+    Send("#2")
+
+    ; 3. 等待 Chrome 浏览器被激活
+    success := false
+    Loop 30 {
+        if WinActive("ahk_exe chrome.exe") {
+            success := true
+            break
+        }
+        Sleep 100
+    }
+
+    if (success) {
+        Sleep 200 ; 保留一点小缓冲，防止刚刚激活时输入被吞
+        ; 4. 新建标签页 (Ctrl+T)，然后定位地址栏 (Ctrl+L)，粘贴文本并回车搜索
+        ; 注意：新建标签页的标准快捷键是 Ctrl+T (`^t`)
+        ; SendInput("^t")
+        ; Sleep 100 ; 给浏览器哪怕一点点新建标签页和聚焦地址栏的渲染时间
+        SendInput("^t^l^v{Enter}")
+    } else {
+        ToolTip("未检测到 Chrome 窗口被激活")
+        SetTimer(() => ToolTip(), -2000)
+    }
+}
+
 ;~ LWin & d:: SendEvent "{LWin Down}1{LWin Up}"
 
 +space::
@@ -1810,33 +1879,61 @@ IsRdpContext() {
 
  ; 微信
  #w::
-{
+ {
+     global g_weixinHwnd
     ahk_exe := "Weixin.exe"
     WinTitle := "微信"
     APP_PATH := A_ProgramsCommon "\微信\微信.lnk"
 
-/*     if WinExist("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
-        ; 检查窗口是否已激活
-        if WinActive("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
-            WinMinimize
+    ; BlockWinPFor(400)
+
+    /* BlockWinPFor(400)
+    ; 确保 Win 键没有处于按下状态（防止系统接收到残留的 Win+P 等快捷）
+    Send("{LWin up}{RWin up}")
+    Sleep 30
+    KeyWait "LWin"
+    KeyWait "RWin" */
+
+    if (g_weixinHwnd && WinExist("ahk_id " g_weixinHwnd)) {
+        if WinActive("ahk_id " g_weixinHwnd) {
+            WinMinimize("ahk_id " g_weixinHwnd)
         } else {
-            WinActivate
+            WinActivate("ahk_id " g_weixinHwnd)
         }
-    } else {
-        Run APP_PATH
-    }   */   
-    
-    if WinExist("ahk_exe " ahk_exe) {
-        ; 检查窗口是否已激活
-        if WinActive("ahk_exe " ahk_exe) {
-            WinMinimize
-        } else {
-            WinActivate
-        }
-    } else {
-        RunAppPathWithPrefixFallback(APP_PATH)
+        return
     }
-    ;~ ToggleWindow2(ahk_exe, WinTitle, APP_PATH)
+    ; 若未找到精确/更合适的窗口，则遍历同进程所有窗口，按标题包含匹配并排除 Photos and Videos
+    ids := WinGetList("ahk_exe " ahk_exe)
+    if (ids && ids.Length > 0) {
+        for hwnd in ids {
+            this_title := WinGetTitle("ahk_id " hwnd)
+            if (this_title != "" && !InStr(this_title, "Photos and Videos") && InStr(this_title, WinTitle)) {
+                if WinActive("ahk_id " hwnd) {
+                    WinMinimize("ahk_id " hwnd)
+                } else {
+                    WinActivate("ahk_id " hwnd)
+                }
+                g_weixinHwnd := hwnd
+                return
+            }
+        }
+
+        ; 激活第一个可见候选窗口（排除可能无标题或系统类窗口）
+        for hwnd in ids {
+            t := WinGetTitle("ahk_id " hwnd)
+            if (t != "" && !InStr(t, "Photos and Videos")) {
+                if WinActive("ahk_id " hwnd) {
+                    WinMinimize("ahk_id " hwnd)
+                } else {
+                    WinActivate("ahk_id " hwnd)
+                }
+                g_weixinHwnd := hwnd
+                return
+            }
+        }
+    }
+    ; 未运行或未找到窗口 → 启动程序
+    RunAppPathWithPrefixFallback(APP_PATH)
 }
 
 
@@ -1856,10 +1953,34 @@ IsRdpContext() {
         }
     }
 }
+ ; WorkBuddy
+#b::
+{
+    ahk_exe := "WorkBuddy.exe"
+	APP_PATH := A_ProgramsCommon "\WorkBuddy.lnk"
+
+    ToggleWindow(ahk_exe, APP_PATH)
+}
 #q::
 {
     ahk_exe := "WXWork.exe"
 	APP_PATH := A_ProgramsCommon "\企业微信\企业微信.lnk"
+
+    ToggleWindow(ahk_exe, APP_PATH)
+}
+; ONLYOFFICE
+#o::
+{
+    ahk_exe := "editors.exe"
+	APP_PATH := A_ProgramsCommon "\ONLYOFFICE\ONLYOFFICE.lnk"
+
+    ToggleWindow(ahk_exe, APP_PATH)
+}
+; 打开钉钉
+^#d::
+{
+    ahk_exe := "DingTalk.exe"
+	APP_PATH := A_ProgramsCommon "\Programs\钉钉\钉钉.lnk"
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
@@ -2247,7 +2368,14 @@ ActivateApp(app) {
     Run APP_DIR "\" app["name"] ".lnk"
 }
 
+; Win + `热键打开Obsidian
+#`::
+{
+	ahk_exe := "Obsidian.exe"
+    APP_PATH := A_ProgramsCommon "\Obsidian.lnk"
 
+    ToggleWindow(ahk_exe, APP_PATH)
+}
 
 #f12::
 {
@@ -2304,15 +2432,72 @@ ActivateApp(app) {
 AddNoteToObsidian(parentDir,noteName,content) {
     ; 基础配置
     DBName := "Lifein" ; Obsidian数据库名
-    ; 编码路径：微信公众号文章/2026-01-28
-    fullPath := parentDir "/" noteName
 
-    ; 构造 URI (append 参数表示追加)
-    ; 如果文件不存在会新建，存在则追加
-    obsUri := "obsidian://new?vault=" DBName "&file=" EncodeURL(fullPath) "&content=" EncodeURL("`n" content) "&append=true"
+    APP_PATH := A_ProgramsCommon "\Obsidian.lnk"
+    if !FileExist(APP_PATH)
+        APP_PATH := A_Programs "\Obsidian.lnk"
+    
+    ; 解析快捷方式实际路径
+    FileGetShortcut(APP_PATH, &targetPath)
+    SplitPath(targetPath, , &targetDir)
+    
+    dataDir := targetDir "\data"
+    ; MsgBox(dataDir)
+    if DirExist(dataDir) {
+        vaultFolders := []
+        Loop Files, dataDir "\*", "D"
+            vaultFolders.Push(A_LoopFileName)
+        
+        /* vaultListText := ""
+        for _, folderName in vaultFolders
+            vaultListText .= (vaultListText = "" ? "" : " | ") folderName
+        MsgBox("检测到 Obsidian 数据目录下的仓库：" vaultListText) */
+        if (vaultFolders.Length == 1) {
+            DBName := vaultFolders[1]
+        } else if (vaultFolders.Length > 1) {
+            myGui := Gui("+AlwaysOnTop -MaximizeBox", "选择 Obsidian 仓库")
+            
+            ; 默认选中第一项，防止用户直接点确认导致未选中任何仓库
+            myGui.Add("ListBox", "w250 r10 vSelectedVault Choose1", vaultFolders)
+            
+            btn := myGui.Add("Button", "w100 Default", "确认")
+            selectedVault := ""
+            
+            SubmitGui(*) {
+                saved := myGui.Submit()
+                selectedVault := saved.SelectedVault
+                myGui.Destroy()
+            }
+            btn.OnEvent("Click", SubmitGui)
+            
+            myGui.OnEvent("Close", (*) => myGui.Destroy())
+            myGui.OnEvent("Escape", (*) => myGui.Destroy())
+            
+            myGui.Show()
+            WinWaitClose(myGui.Hwnd)
+            
+            if (selectedVault != "") {
+                DBName := selectedVault
+            }
+        }
 
-    ; 执行
-    Run(obsUri)
+        ; 根据选择的仓库构造路径
+        vaultPath := dataDir "\" DBName 
+
+        ; 原始路径：微信公众号文章/2026-01-28
+        fullPath := parentDir "/" noteName
+
+        ToolTip("正在保存公众号文章到 " vaultPath "\\" StrReplace(fullPath, "/", "\\") " ...")
+        SetTimer(() => ToolTip(), -3000)
+
+        ; 构造 URI (append 参数表示追加)
+        ; 如果文件不存在会新建，存在则追加
+        obsUri := "obsidian://new?vault=" DBName "&file=" EncodeURL(fullPath) "&content=" EncodeURL("`n" content) "&append=true"
+
+        ; 执行
+        Run(obsUri)
+
+    }
 }
 
 ;~ !`::Send "#{Space}"
@@ -2340,15 +2525,39 @@ EncodeURL(str) {
 ; 核心函数：模拟右键点击并获取链接
 ; ==============================================================================
 GetUrlByRightClick(uiElement) {
+    Critical "On"
     A_Clipboard := ""
     ; 1. 触发右键
     uiElement.Click("right")
-    ;~ Sleep 300 ; 等菜单弹出来
-	Send "c"
+
+    ; 等菜单出现后再开始导航，避免 Up 发到菜单外
+    menuReady := false
+    Loop 20 {
+        if WinExist("ahk_class #32768") {
+            menuReady := true
+            break
+        }
+        Sleep 30
+    }
+    if !menuReady {
+        Sleep 200
+    }
+
+    Loop 5 {
+        SendEvent "{Up}"
+        Sleep 120
+    }
+
+    ; 最后一次 Up 处理后再回车，避免 Enter 抢跑
+    Sleep 120
+    SendEvent "{Enter}"
+
     ; 4. 等待剪贴板
-    if ClipWait(0.5) {
+    if ClipWait(1.2) {
+        Critical "Off"
         return A_Clipboard
     }
+    Critical "Off"
     return "未获取到链接"
 }
 
@@ -2406,12 +2615,12 @@ GetDevToolsLineNumber() {
 }
 
 ; 示例热键：Ctrl + Alt + L
-^!l:: {
-    line := GetDevToolsLineNumber()
-    if (line > 0) {
-        MsgBox("当前行号: " . line, "DevTools Info", "Iconi T3")
-    }
-}
+; ^!l:: {
+;     line := GetDevToolsLineNumber()
+;     if (line > 0) {
+;         MsgBox("当前行号: " . line, "DevTools Info", "Iconi T3")
+;     }
+; }
 
 ; 当按下 Alt+Q 时，手动检测弹窗，若失败则强行唤醒 URL
 ^!q::
