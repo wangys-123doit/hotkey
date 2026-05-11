@@ -2530,27 +2530,19 @@ GetUrlByRightClick(uiElement) {
     ; 1. 触发右键
     uiElement.Click("right")
 
-    ; 等菜单出现后再开始导航，避免 Up 发到菜单外
-    menuReady := false
-    Loop 20 {
-        if WinExist("ahk_class #32768") {
-            menuReady := true
+    ; 等菜单出现后再开始导航，出现即走，避免固定等待过长
+    menuHwnd := 0
+    startTick := A_TickCount
+    while (A_TickCount - startTick < 300) {
+        menuHwnd := WinExist("ahk_class #32768")
+        if menuHwnd
             break
-        }
-        Sleep 30
+        Sleep 10
     }
-    if !menuReady {
-        Sleep 200
-    }
-
-    Loop 5 {
-        SendEvent "{Up}"
-        Sleep 120
-    }
-
-    ; 最后一次 Up 处理后再回车，避免 Enter 抢跑
-    Sleep 120
-    SendEvent "{Enter}"
+    if !menuHwnd
+        Sleep 80
+    
+    SendEvent "{Up 5}{Enter}"
 
     ; 4. 等待剪贴板
     if ClipWait(1.2) {
