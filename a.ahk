@@ -25,9 +25,51 @@ GetLineNumberFromBridge() {
     }
 }
 
-; 热键绑定
-~^!l:: {
+EnsureBridgeRunning() {
+    if IsBridgeRunning() {
+        return true
+    }
+
+    bridgeScript := A_ScriptDir "\run_bridge.ps1"
+    if FileExist(bridgeScript) {
+        try {
+            Run('powershell -NoProfile -ExecutionPolicy Bypass -File "' bridgeScript '"', , "Hide")
+        } catch {
+        }
+    }
+
+    Loop 6 {
+        if IsBridgeRunning() {
+            return true
+        }
+        Sleep 150
+    }
+
+    return false
+}
+
+IsBridgeRunning() {
+    Http := ComObject("WinHttp.WinHttpRequest.5.1")
+    try {
+        Http.Open("GET", "http://localhost:3000/line-number", false)
+        Http.Send()
+        return true
+    } catch {
+        return false
+    }
+}
+
+; 热键绑定（仅在 Chrome 激活时生效）
+#HotIf WinActive("ahk_exe chrome.exe")
+!l:: {
+    if !EnsureBridgeRunning() {
+        ToolTip("Bridge 未启动")
+        SetTimer () => ToolTip(), -2000
+        return
+    }
+
     line := GetLineNumberFromBridge()
     ToolTip("Line: " . line)
     SetTimer () => ToolTip(), -2000 ; 2秒后消失
 }
+#HotIf

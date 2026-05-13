@@ -17,7 +17,7 @@ ToolTip("")
 #Include CycleExplorerSwitcher.ahk
 ; 可选包含：文件不存在时忽略，不会在加载阶段报错
 #Include *i hotkeys_private.ahk
-#Include *i a.ahk
+; #Include *i a.ahk
 ;~ ; #:Win,ctrl:^,shift:+,alt:! left左键：<,right右键：>
 ;~ #Include RunRadiator.ahk
 
@@ -1771,10 +1771,18 @@ QuoteArg(s) {
 ; #HotIf !IsRdpContext()
 SC137::
 RCtrl Up:: {
-    LaunchChromeWithDebugPort()
+    ahk_exe := "chrome.exe"
+    if WinExist("ahk_exe " ahk_exe) {
+        ; 检查窗口是否已激活
+        if WinActive("ahk_exe " ahk_exe) {
+            WinMinimize
+        } else {
+            WinActivate
+        }
+    } else {
+        LaunchChromeWithDebugPort()
+    }
 }
-; #HotIf
-
 LaunchChromeWithDebugPort() {
     chromePath := A_ProgramFiles "\Google\Chrome\Application\chrome.exe"
     if !FileExist(chromePath) {
@@ -1805,8 +1813,10 @@ IsRdpContext() {
 ; [新加] 复制并在浏览器搜索
 #f10::
 {
-    ; 释放可能按下的修饰键，避免产生意外的组合键（如 Win+RAlt 等）
-    Send("{LWin up}{RWin up}{Ctrl up}{Shift up}{Alt up}")
+    ; 等待 Win 键真实松开，避免后续按键被解释为 Win 组合键（如 Win+L）
+    KeyWait "LWin"
+    KeyWait "RWin"
+    Send("{Ctrl up}{Shift up}{Alt up}")
 
     ; 1. 清空剪贴板并直接发送复制指令（绕过 CapsLock 钩子，直接执行复制动作更稳定）
     A_Clipboard := ""
@@ -1817,7 +1827,7 @@ IsRdpContext() {
     }
     
     if !ClipWait(1) {
-        ToolTip("未能获取到选中文本")
+
         SetTimer(() => ToolTip(), -2000)
         return
     }
@@ -1829,7 +1839,7 @@ IsRdpContext() {
     } else {
         ; 直接发送打开浏览器的快捷键 (Win+2)
         ; 使用 AHK 原生的 #2 语法，防止拆分发送导致 Windows 识别为按下了单独的 Win 键（弹出开始菜单）
-        Send("#2")
+        LaunchChromeWithDebugPort()
 
         ; 3. 等待 Chrome 浏览器被激活
         Loop 30 {
@@ -1854,7 +1864,7 @@ IsRdpContext() {
     }
 }
 
-;~ LWin & d:: SendEvent "{LWin Down}1{LWin Up}"
+;~ LWin & d:: SendEvent "{LWin Down}1{LWin Up}" 激活idea
 
 +space::
 {
@@ -2578,83 +2588,4 @@ GetUrlByRightClick(uiElement) {
     return "未获取到链接"
 }
 
-/**
- * 获取 Chrome DevTools Source 面板当前行号
- * @returns {Integer} 成功返回行号，失败返回 0
- */
-GetDevToolsLineNumber() {
-    ; 1. 环境检查：确保 Chrome 处于活动状态
-    if !WinActive("ahk_exe chrome.exe") {
-        return 0
-    }
-
-    ; 保存当前剪贴板，以便后续恢复 (System Guardian: Data Integrity)
-    savedClipboard := ClipboardAll()
-    A_Clipboard := "" 
-
-    try {
-        ; 2. 核心交互逻辑
-        ; 发送 Ctrl+G 打开 "Go to line" 输入框
-        Send("^g")
-        if !ClipWait(1, 1) { ; 等待 UI 响应并自动选中文本
-            Send("^a^c") ; 强制全选并复制
-        } else {
-            Send("^c")
-        }
-        
-        ; 等待剪贴板填充
-        if !ClipWait(0.5) {
-            throw Error("Clipboard timeout")
-        }
-
-        ; 3. 数据解析 (RegEx 提取)
-        ; DevTools 通常显示格式为 "行:列" 或单纯 "行"
-        rawText := A_Clipboard
-        if RegExMatch(rawText, "^\d+", &match) {
-            lineNumber := Integer(match[0])
-        } else {
-            lineNumber := 0
-        }
-
-        ; 4. UI 清理：发送 Esc 关闭跳转框
-        Send("{Esc}")
-        
-        return lineNumber
-
-    } catch Error as err {
-        ; 异常处理与日志建议
-        FileAppend(FormatTime() ": " err.Message "`n", "debug.log")
-        return 0
-    } finally {
-        ; 恢复现场
-        A_Clipboard := savedClipboard
-    }
-}
-
-; 示例热键：Ctrl + Alt + L
-; ^!l:: {
-;     line := GetDevToolsLineNumber()
-;     if (line > 0) {
-;         MsgBox("当前行号: " . line, "DevTools Info", "Iconi T3")
-;     }
-; }
-
-; 当按下 Alt+Q 时，手动检测弹窗，若失败则强行唤醒 URL
-^!q::
-{
-    ; 发送原有的快捷键给 Chrome
-    ; Send("!q")
-    
-    ; 延迟等待弹窗出现 (QuicKey 窗口通常有特定的标题或类名)
-    ; if !WinWait("ahk_exe chrome.exe", , 0.5) 
-    ; {
-        ; 如果没检测到弹窗，通过命令行强制预热 popup.html
-        ; 这样会强制 Chrome 刷新资源映射并唤醒 Service Worker
-      ;   Run("chrome.exe --new-window chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false")
-    ; }
-	
-	
-	; 使用当前 Chrome 窗口另起标签页执行
-Run("chrome.exe chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false")
-}
 

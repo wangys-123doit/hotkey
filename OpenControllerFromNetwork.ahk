@@ -1,3 +1,4 @@
+
 ;~ 1、配置区
 global PERF_LOG_ENABLED := true
 global DEVTOOLS_MENU_RETRIES := 2
@@ -23,12 +24,55 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
     copy: {valid: false, x: 0, y: 0, mx: 0, my: 0, ts: 0},
     url: {valid: false, x: 0, y: 0, mx: 0, my: 0, ts: 0}
 }
-
+; 热键绑定（仅在 Chrome 激活时生效）
+#HotIf WinActive("ahk_exe chrome.exe")
 ;~ 2、主入口
-^!g::OpenControllerFromNetwork()
-^!u::CopyDevToolsSelectedRequestURL()
+!u::
+{
+    CopyDevToolsSelectedRequestURL()
 
-;~ ^+g::OpenControllerFromNetwork()
+    SendEvent "{LWin Down}1{LWin Up}"
+
+    if WinWaitActive("ahk_exe idea64.exe", , 2) {
+        SendEvent "^+s^v{Enter}"
+        return
+    }
+    ToolTip("未检测到 IDEA 窗口")
+    SetTimer(() => ToolTip(), -2000)
+}
+^!u::CopyDevToolsSelectedRequestURL()
+!l:: {
+    if !EnsureBridgeRunning() {
+        ToolTip("Bridge 未启动")
+        SetTimer () => ToolTip(), -2000
+        return
+    }
+
+    line := GetLineNumberFromBridge()
+    ToolTip("Line: " . line)
+    SetTimer () => ToolTip(), -2000 ; 2秒后消失
+}
+
+
+; 当按下 Alt+Q 时，手动检测弹窗，若失败则强行唤醒 URL
+^!q::
+{
+    ; 发送原有的快捷键给 Chrome
+    ; Send("!q")
+    
+    ; 延迟等待弹窗出现 (QuicKey 窗口通常有特定的标题或类名)
+    ; if !WinWait("ahk_exe chrome.exe", , 0.5) 
+    ; {
+        ; 如果没检测到弹窗，通过命令行强制预热 popup.html
+        ; 这样会强制 Chrome 刷新资源映射并唤醒 Service Worker
+      ;   Run("chrome.exe --new-window chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false")
+    ; }
+	
+	
+	; 使用当前 Chrome 窗口另起标签页执行
+Run("chrome.exe chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false")
+}
+#HotIf
 
 ;~ 3、主流程
 OpenControllerFromNetwork()
@@ -95,9 +139,6 @@ CopyDevToolsSelectedRequestURL()
     }
 }
 
-
-
-
 ;~ 4、DevTools 读取 URL（核心）
 DevTools_GetSelectedURL()
 {
@@ -148,6 +189,10 @@ DevTools_CopyURLViaContextMenu()
     MouseGetPos &mx, &my
     t := A_TickCount
     opened := DevTools_OpenContextMenuOnFocusedOrSelectedRequest(&mx, &my)
+    if !opened
+    {
+        opened := DevTools_OpenContextMenuOnSelectedRequestByKeyboard(&mx, &my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
+    }
     if !opened
     {
         DevTools_OpenContextMenuAtPoint(mx, my, DEVTOOLS_CONTEXTMENU_SLEEP_MS)
@@ -374,6 +419,34 @@ DevTools_OpenContextMenuOnSelectedRequest(&mx, &my)
     return DevTools_OpenContextMenuOnRow(row, &mx, &my, 180)
 }
 
+DevTools_OpenContextMenuOnSelectedRequestByKeyboard(&mx, &my, waitMs := 120)
+{
+    row := DevTools_GetSelectedRequestRowElement()
+    if !row
+        return false
+
+    try br := row.BoundingRectangle
+    catch
+        return false
+
+    mx := br.l + ((br.r - br.l) // 2)
+    my := br.t + ((br.b - br.t) // 2)
+
+    try row.SetFocus()
+    catch
+    {
+    }
+
+    try row.Click()
+    catch
+    {
+    }
+
+    Send "{AppsKey}"
+    DevTools_WaitForContextMenu(waitMs)
+    return true
+}
+
 DevTools_GetFocusedRequestRowElement()
 {
     try focused := UIA.GetFocusedElement()
@@ -428,7 +501,7 @@ DevTools_OpenContextMenuOnRow(row, &mx, &my, waitMs)
     try
     {
         row.Click("Right")
-        Sleep waitMs
+        DevTools_WaitForContextMenu(waitMs)
         return true
     }
     catch
@@ -444,8 +517,21 @@ DevTools_OpenContextMenuAtPoint(mx, my, waitMs := 120)
     MouseMove mx, my, 0
     Click "Right"
     MouseMove oldX, oldY, 0
-    Sleep waitMs
+    DevTools_WaitForContextMenu(waitMs)
     return true
+}
+
+DevTools_WaitForContextMenu(waitMs := 120)
+{
+    start := A_TickCount
+    while (A_TickCount - start < waitMs)
+    {
+        if WinExist("ahk_class #32768")
+            return true
+        Sleep 10
+    }
+
+    return false
 }
 
 DevTools_TryCopyURLViaCtrlCAtMouse(mx, my)
@@ -498,6 +584,13 @@ DevTools_WaitAndInvokeMenuItem(mode, mx, my, retries := "", sleepMs := "", enabl
 DevTools_InvokeBestMenuItem(mode, mx, my, allowFullScan := true)
 {
     cond := UIA.CreatePropertyCondition(UIA.Property.ControlType, UIA.Type.MenuItem)
+    menuRoot := DevTools_GetContextMenuRoot()
+    if IsObject(menuRoot)
+    {
+        best := DevTools_FindBestMenuItemInElement(menuRoot, cond, mode, mx, my, 1200, 800)
+        if IsObject(best)
+            return DevTools_ClickOrInvoke(best, mode, mx, my)
+    }
     ; 优先在焦点和鼠标附近做局部查找，避免全桌面 Subtree 扫描
     anchors := []
 
@@ -578,6 +671,18 @@ DevTools_InvokeBestMenuItem(mode, mx, my, allowFullScan := true)
     }
 
     return false
+}
+
+DevTools_GetContextMenuRoot()
+{
+    hwnd := WinExist("ahk_class #32768")
+    if !hwnd
+        return ""
+
+    try
+        return UIA.ElementFromHandle(hwnd)
+    catch
+        return ""
 }
 
 DevTools_GetCachedMenuAnchor(mode, mx, my)
@@ -875,3 +980,63 @@ ExecCmd(cmd)
     result := exec.StdOut.ReadAll()
     return result
 }
+
+/**
+ * 获取行号请求封装
+ */
+GetLineNumberFromBridge() {
+    Http := ComObject("WinHttp.WinHttpRequest.5.1")
+    try {
+        Http.Open("GET", "http://localhost:3000/line-number", true)
+        Http.Send()
+        if !Http.WaitForResponse(1) ; 1秒超时
+            return "Timeout"
+            
+        ; 简单的 JSON 解析逻辑（生产环境建议使用专用的 JSON 库）
+        response := Http.ResponseText
+        if RegExMatch(response, '"lineNumber":(\d+)', &match) {
+            return match[1]
+        }
+        if RegExMatch(response, '"error"\s*:\s*"([^"]+)"', &errMatch) {
+            return errMatch[1]
+        }
+        return "Not in Source Panel"    
+    } catch Error as err {
+        return "Offline"
+    }
+}
+
+EnsureBridgeRunning() {
+    if IsBridgeRunning() {
+        return true
+    }
+
+    bridgeScript := A_ScriptDir "\run_bridge.ps1"
+    if FileExist(bridgeScript) {
+        try {
+            Run('powershell -NoProfile -ExecutionPolicy Bypass -File "' bridgeScript '"', , "Hide")
+        } catch {
+        }
+    }
+
+    Loop 6 {
+        if IsBridgeRunning() {
+            return true
+        }
+        Sleep 150
+    }
+
+    return false
+}
+
+IsBridgeRunning() {
+    Http := ComObject("WinHttp.WinHttpRequest.5.1")
+    try {
+        Http.Open("GET", "http://localhost:3000/line-number", false)
+        Http.Send()
+        return true
+    } catch {
+        return false
+    }
+}
+
