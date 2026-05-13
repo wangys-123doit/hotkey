@@ -16,15 +16,18 @@ GetLineNumberFromBridge() {
         if RegExMatch(response, '"lineNumber":(\d+)', &match) {
             return match[1]
         }
-        return "Error"    
+        if RegExMatch(response, '"error"\s*:\s*"([^"]+)"', &errMatch) {
+            return errMatch[1]
+        }
+        return "Not in Source Panel"    
     } catch Error as err {
         return "Offline"
     }
 }
 
 ; 热键绑定
-/* ~^!l:: {
+~^!l:: {
     line := GetLineNumberFromBridge()
     ToolTip("Line: " . line)
     SetTimer () => ToolTip(), -2000 ; 2秒后消失
-} */
+}

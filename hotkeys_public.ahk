@@ -1,4 +1,5 @@
-:*:@ip::$(Invoke-RestMethod -Uri "http://ip-api.com/json/").query
+; :*:@ip::$(Invoke-RestMethod -Uri "http://ip-api.com/json/").query
+:*:@ip::$(Invoke-RestMethod -Uri "http://ipinfo.io/ip")
 :o:ss1::ss -ltnp | grep :
 :o:scp1::scp -r -P 22 /etc/redis.conf root@8.148.254.178:/deploy/
 :o:mvn1::mvn clean package -DskipTests

@@ -17,6 +17,7 @@ ToolTip("")
 #Include CycleExplorerSwitcher.ahk
 ; 可选包含：文件不存在时忽略，不会在加载阶段报错
 #Include *i hotkeys_private.ahk
+#Include *i a.ahk
 ;~ ; #:Win,ctrl:^,shift:+,alt:! left左键：<,right右键：>
 ;~ #Include RunRadiator.ahk
 
@@ -837,6 +838,7 @@ ScriptLifecycle.Init()
 
 GroupAdd "ShellGroup", "ahk_exe mintty.exe"
 GroupAdd "ShellGroup", "ahk_exe Xshell.exe"
+GroupAdd "ShellGroup", "ahk_exe Alibaba Cloud Client.exe"
 ;GroupAdd "ShellGroup", "ahk_exe WindowsTerminal.exe"
 ; ~修饰符的作用：1.​不阻止默认按键功能2.适用于需要保留原按键功能的情况
 ; 适用场景为在按键原有功能的基础上，额外执行某些操作​
@@ -1764,15 +1766,33 @@ QuoteArg(s) {
         WinSetAlwaysOnTop(-1, "ahk_id " hwnd) ; -1 = 切换
 }
 
-; Prtsc键或者LAlt & space都能打开chrome
+; Prtsc键或者LCtrl都能打开chrome
 ; 仅在非 RDP 场景下允许触发，避免连接/切换 RDP 时误发 Win 键
 ; #HotIf !IsRdpContext()
 SC137::
 RCtrl Up:: {
-    SendEvent "{LWin Down}2{LWin Up}"
-    ; 原有逻辑保持不变
+    LaunchChromeWithDebugPort()
 }
 ; #HotIf
+
+LaunchChromeWithDebugPort() {
+    chromePath := A_ProgramFiles "\Google\Chrome\Application\chrome.exe"
+    if !FileExist(chromePath) {
+        chromePath := A_ProgramFiles " (x86)\Google\Chrome\Application\chrome.exe"
+    }
+
+    profileDir := A_Temp "\chrome_debug_profile_9223"
+    try {
+        DirCreate(profileDir)
+    } catch {
+    }
+
+    if FileExist(chromePath) {
+        Run('"' chromePath '" --remote-debugging-port=9223 --user-data-dir="' profileDir '"')
+    } else {
+        Run('chrome.exe --remote-debugging-port=9223 --user-data-dir="' profileDir '"')
+    }
+}
 
 IsRdpContext() {
     ; 远程会话中，或当前焦点在 mstsc 窗口，都视为 RDP 场景
@@ -1802,18 +1822,23 @@ IsRdpContext() {
         return
     }
 
-    ; 2. 直接发送打开浏览器的快捷键 (Win+2)
-    ; 使用 AHK 原生的 #2 语法，防止拆分发送导致 Windows 识别为按下了单独的 Win 键（弹出开始菜单）
-    Send("#2")
-
-    ; 3. 等待 Chrome 浏览器被激活
+    ; 2. 若当前已在 Chrome 应用内，则跳过等待与切换
     success := false
-    Loop 30 {
-        if WinActive("ahk_exe chrome.exe") {
-            success := true
-            break
+    if WinActive("ahk_exe chrome.exe") {
+        success := true
+    } else {
+        ; 直接发送打开浏览器的快捷键 (Win+2)
+        ; 使用 AHK 原生的 #2 语法，防止拆分发送导致 Windows 识别为按下了单独的 Win 键（弹出开始菜单）
+        Send("#2")
+
+        ; 3. 等待 Chrome 浏览器被激活
+        Loop 30 {
+            if WinActive("ahk_exe chrome.exe") {
+                success := true
+                break
+            }
+            Sleep 100
         }
-        Sleep 100
     }
 
     if (success) {
@@ -2542,7 +2567,7 @@ GetUrlByRightClick(uiElement) {
     if !menuHwnd
         Sleep 80
     
-    SendEvent "{Up 5}{Enter}"
+    SendEvent "{Down 2}{Enter}"
 
     ; 4. 等待剪贴板
     if ClipWait(1.2) {
