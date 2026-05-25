@@ -1185,11 +1185,20 @@ isProxy := 0  ; 初始值为 0
     }
 
 }
-
+#a::
+{
+    SendInput "{LWin Down}{Ctrl Down}c{Ctrl Up}{LWin Up}"
+    SendInput "{Ctrl Up}{LWin Up}{RWin Up}"
+}
 
 $#^c::return
 
-
+#^a::
+{
+	ahk_exe := "Alibaba Cloud Client.exe"
+    APP_PATH := A_ProgramsCommon "\Alibaba Cloud Client.lnk"
+    ToggleWindow(ahk_exe, APP_PATH)
+}
 
 ; ==============================
 ; 窗口选择器对象
@@ -1771,14 +1780,14 @@ QuoteArg(s) {
 ; #HotIf !IsRdpContext()
 SC137::
 RCtrl Up:: {
-    ahk_exe := "chrome.exe"
-    if WinExist("ahk_exe " ahk_exe) {
+    if WinExist("ahk_exe chrome.exe") {
+        SendEvent "{LWin Down}2{LWin Up}"
         ; 检查窗口是否已激活
-        if WinActive("ahk_exe " ahk_exe) {
+        /* if WinActive("ahk_exe " ahk_exe) {
             WinMinimize
         } else {
             WinActivate
-        }
+        } */
     } else {
         LaunchChromeWithDebugPort()
     }
@@ -2587,5 +2596,3 @@ GetUrlByRightClick(uiElement) {
     Critical "Off"
     return "未获取到链接"
 }
-
-

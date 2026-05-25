@@ -27,12 +27,6 @@ global g_ExplorerDraw := Map(
 #e::CycleExplorerSwitcher() ;~ 类 Alt+Tab：轮询文件资源管理器
 ; #a:: HandleAppHotkey(A_ThisHotkey) ;~ 打开文件资源管理器
 
-#a::
-{
-    SendInput "{LWin Down}{Ctrl Down}c{Ctrl Up}{LWin Up}"
-    SendInput "{Ctrl Up}{LWin Up}{RWin Up}"
-}
-
 #HotIf IsExplorerSwitcherActive()
 Esc::CloseExplorerSwitcher()
 #HotIf

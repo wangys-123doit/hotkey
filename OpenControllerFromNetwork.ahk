@@ -41,7 +41,7 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
     SetTimer(() => ToolTip(), -2000)
 }
 ^!u::CopyDevToolsSelectedRequestURL()
-!l:: {
+#!l:: {
     if !EnsureBridgeRunning() {
         ToolTip("Bridge 未启动")
         SetTimer () => ToolTip(), -2000
@@ -1019,11 +1019,11 @@ EnsureBridgeRunning() {
         }
     }
 
-    Loop 6 {
+    Loop 20 {
         if IsBridgeRunning() {
             return true
         }
-        Sleep 150
+        Sleep 200
     }
 
     return false
@@ -1032,9 +1032,10 @@ EnsureBridgeRunning() {
 IsBridgeRunning() {
     Http := ComObject("WinHttp.WinHttpRequest.5.1")
     try {
-        Http.Open("GET", "http://localhost:3000/line-number", false)
+        Http.SetTimeouts(300, 300, 300, 800)
+        Http.Open("GET", "http://127.0.0.1:3000/health", false)
         Http.Send()
-        return true
+        return (Http.Status = 200)
     } catch {
         return false
     }

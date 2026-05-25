@@ -2,6 +2,7 @@ const CDP = require('chrome-remote-interface');
 const http = require('http');
 
 const CDP_PORT = 9223;
+const BRIDGE_PORT = 3000;
 
 /**
  * 核心逻辑：从 DevTools 内部上下文中获取行号
@@ -63,13 +64,59 @@ async function getDevToolsLineNumber() {
     }
 }
 
+function probeExistingBridge(port) {
+    return new Promise((resolve) => {
+        const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
+            resolve(res.statusCode === 200);
+            res.resume();
+        });
+
+        req.setTimeout(800, () => {
+            req.destroy();
+            resolve(false);
+        });
+
+        req.on('error', () => resolve(false));
+    });
+}
+
 // 暴露 HTTP 服务
-http.createServer(async (req, res) => {
-    if (req.url === '/line-number') {
+const server = http.createServer(async (req, res) => {
+    const pathname = new URL(req.url, `http://127.0.0.1:${BRIDGE_PORT}`).pathname;
+
+    if (pathname === '/health' || pathname === '/health/') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, pid: process.pid }));
+        return;
+    }
+
+    if (pathname === '/line-number' || pathname === '/line-number/') {
         const data = await getDevToolsLineNumber();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(data));
+        return;
     }
-}).listen(3000);
 
-console.log('Bridge service running at http://localhost:3000');
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+server.on('error', async (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+        const healthy = await probeExistingBridge(BRIDGE_PORT);
+        if (healthy) {
+            console.log(`Bridge already running at http://localhost:${BRIDGE_PORT}`);
+            process.exit(0);
+        }
+
+        console.error(`Port ${BRIDGE_PORT} is in use by another process.`);
+        process.exit(1);
+        return;
+    }
+
+    throw err;
+});
+
+server.listen(BRIDGE_PORT, () => {
+    console.log(`Bridge service running at http://localhost:${BRIDGE_PORT}`);
+});
