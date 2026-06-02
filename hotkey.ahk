@@ -11,6 +11,13 @@ SetCapsLockState "AlwaysOff"
 ; 清除重载脚本时可能残留的工具提示
 ToolTip("")
 
+; 从外部进程直接触发 VS Code 前台激活
+if (A_Args.Length > 0 && A_Args[1] = "--focus-vscode") {
+    ; 复用 Ctrl+Space 热键原有逻辑：优先激活已存在的 Code 窗口
+    openVSCode("Code.exe", A_Programs "\Visual Studio Code\Visual Studio Code.lnk")
+    ExitApp()
+}
+
 #Include hotkeys_public.ahk
 #Include OpenControllerFromNetwork.ahk
 #Include rdp.ahk
@@ -270,10 +277,10 @@ pasteEnter(){
         try {
             targetHwnd := ControlGetHwnd("Chrome_WidgetWin_01", "ahk_class YodaoMainWndClass")
             ControlFocus(targetHwnd)
-            
+
             focusedCtrl := ControlGetFocus("ahk_class YodaoMainWndClass")
             focusedHwnd := ControlGetHwnd(focusedCtrl, "ahk_class YodaoMainWndClass")
-            
+
             if (targetHwnd == focusedHwnd) {
                 success := true
                 break
@@ -294,7 +301,7 @@ pasteEnter(){
         ; Chromium 内核会按顺序同步处理队列中的按键，无需手动 Sleep
         SendInput("^a^v{Enter}")
     }
-    
+
     return
 }
 
@@ -505,7 +512,7 @@ ConvertCharacter() {
         SwitchPunctuation(true,lastChar)
         return
     }
-    
+
      ;~ Chr(34)：双引号，Chr(39)：单引号，Chr(96)：反引号`
     static ENG_PUNCT := ",.;:?!()[]<>\\$" . Chr(34) . Chr(96)
     ; 已经是英文标点
@@ -914,7 +921,7 @@ global g_MButtonLastTick := 0
 *~MButton:: ; 仅在可输入光标下触发粘贴，其它场景保留原生中键
 {
     cursorType := A_Cursor
-    ; ToolTip 111 . " - " . cursorType    
+    ; ToolTip 111 . " - " . cursorType
     ; SetTimer(ToolTip, -1000)  ; 1秒后自动关闭提示
     if (cursorType = "Unknown") {
         return
@@ -1605,11 +1612,11 @@ showAppListView(ahk_class) {
     ToggleWindow(ahk_exe, APP_PATH)
 
 }
-/* 
+/*
 A_ProgramsCommon: 公共开始菜单程序目录
 默认是 C:\ProgramData\Microsoft\Windows\Start Menu\Programs
 A_Programs: 当前用户开始菜单程序目录
-例如 C:\Users\yinsh\AppData\Roaming\Microsoft\Windows\Start Menu\Programs 
+例如 C:\Users\yinsh\AppData\Roaming\Microsoft\Windows\Start Menu\Programs
 */
 ; win+F1打开snipaste
 #F1::
@@ -1681,20 +1688,7 @@ openVSCode(ahkExe, appPath, workspace := "") {
 
 LaunchVSCodeAsStandardUser(appPath, workspace := "") {
     try {
-        primary := appPath
-        alternate := SwapProgramsPrefix(primary)
-
-        launchPath := ""
-        if FileExist(primary) {
-            launchPath := primary
-        } else if (alternate != "" && FileExist(alternate)) {
-            launchPath := alternate
-        } else {
-            if (alternate != "") {
-                throw Error("VS Code 路径不存在:`n1) " primary "`n2) " alternate)
-            }
-            throw Error("VS Code 路径不存在:`n" primary)
-        }
+        launchPath := ResolveAppPath(appPath)
 
         args := "--reuse-window"
         if (workspace != "") {
@@ -1702,7 +1696,7 @@ LaunchVSCodeAsStandardUser(appPath, workspace := "") {
         }
 
         launchTarget := ResolveShortcutTarget(launchPath)
-        if !LaunchViaLimitedScheduledTask(launchTarget, args) {
+        if !LaunchViaLimitedScheduledTask(launchTarget, args, "AHK_LaunchVSCode_Unelevated") {
             throw Error("无法通过任务计划（LIMITED）启动 VS Code。")
         }
     } catch Error as e {
@@ -1710,9 +1704,35 @@ LaunchVSCodeAsStandardUser(appPath, workspace := "") {
     }
 }
 
-LaunchViaLimitedScheduledTask(target, args := "") {
-    static taskName := "AHK_LaunchVSCode_Unelevated"
+LaunchQoderAsStandardUser(appPath) {
+    try {
+        launchPath := ResolveAppPath(appPath)
+        launchTarget := ResolveShortcutTarget(launchPath)
+        if !LaunchViaLimitedScheduledTask(launchTarget, , "AHK_LaunchQoder_Unelevated") {
+            throw Error("无法通过任务计划（LIMITED）启动 Qoder。")
+        }
+    } catch Error as e {
+        MsgBox "启动 Qoder 失败:`n" e.Message, "错误", "Iconx"
+    }
+}
 
+; 解析应用路径，支持 C:/D: 盘前缀回退
+ResolveAppPath(appPath) {
+    primary := appPath
+    alternate := SwapProgramsPrefix(primary)
+
+    if FileExist(primary)
+        return primary
+    if (alternate != "" && FileExist(alternate))
+        return alternate
+
+    if (alternate != "") {
+        throw Error("路径不存在:`n1) " primary "`n2) " alternate)
+    }
+    throw Error("路径不存在:`n" primary)
+}
+
+LaunchViaLimitedScheduledTask(target, args := "", taskName := "AHK_LaunchApp_Unelevated") {
     taskRun := '\"' target '\"'
     if (args != "") {
         taskRun .= " " args
@@ -1834,7 +1854,7 @@ IsRdpContext() {
     } else {
         SendEvent("^{c}")
     }
-    
+
     if !ClipWait(1) {
 
         SetTimer(() => ToolTip(), -2000)
@@ -1913,12 +1933,24 @@ IsRdpContext() {
 }
 #c::
 {
-	; ahk_exe := "Xshell.exe"
-	; APP_PATH := A_ProgramFiles " (x86)\NetSarang\Xshell 8\Xshell.exe"
 	ahk_exe := "Qoder.exe"
     APP_PATH := A_ProgramsCommon "\Qoder\Qoder.lnk"
 
-    ToggleWindow(ahk_exe, APP_PATH)
+    hwnd := WinExist("ahk_exe " ahk_exe)
+    if hwnd {
+        if WinActive("ahk_id " hwnd) {
+            WinMinimize("ahk_id " hwnd)
+        } else {
+            WinShow("ahk_id " hwnd)
+            WinActivate("ahk_id " hwnd)
+        }
+        return
+    }
+
+    LaunchQoderAsStandardUser(APP_PATH)
+    if WinWait("ahk_exe " ahk_exe, , 6) {
+        WinActivate("ahk_exe " ahk_exe)
+    }
 }
 
  ; 微信
@@ -2480,18 +2512,18 @@ AddNoteToObsidian(parentDir,noteName,content) {
     APP_PATH := A_ProgramsCommon "\Obsidian.lnk"
     if !FileExist(APP_PATH)
         APP_PATH := A_Programs "\Obsidian.lnk"
-    
+
     ; 解析快捷方式实际路径
     FileGetShortcut(APP_PATH, &targetPath)
     SplitPath(targetPath, , &targetDir)
-    
+
     dataDir := targetDir "\data"
     ; MsgBox(dataDir)
     if DirExist(dataDir) {
         vaultFolders := []
         Loop Files, dataDir "\*", "D"
             vaultFolders.Push(A_LoopFileName)
-        
+
         /* vaultListText := ""
         for _, folderName in vaultFolders
             vaultListText .= (vaultListText = "" ? "" : " | ") folderName
@@ -2500,33 +2532,33 @@ AddNoteToObsidian(parentDir,noteName,content) {
             DBName := vaultFolders[1]
         } else if (vaultFolders.Length > 1) {
             myGui := Gui("+AlwaysOnTop -MaximizeBox", "选择 Obsidian 仓库")
-            
+
             ; 默认选中第一项，防止用户直接点确认导致未选中任何仓库
             myGui.Add("ListBox", "w250 r10 vSelectedVault Choose1", vaultFolders)
-            
+
             btn := myGui.Add("Button", "w100 Default", "确认")
             selectedVault := ""
-            
+
             SubmitGui(*) {
                 saved := myGui.Submit()
                 selectedVault := saved.SelectedVault
                 myGui.Destroy()
             }
             btn.OnEvent("Click", SubmitGui)
-            
+
             myGui.OnEvent("Close", (*) => myGui.Destroy())
             myGui.OnEvent("Escape", (*) => myGui.Destroy())
-            
+
             myGui.Show()
             WinWaitClose(myGui.Hwnd)
-            
+
             if (selectedVault != "") {
                 DBName := selectedVault
             }
         }
 
         ; 根据选择的仓库构造路径
-        vaultPath := dataDir "\" DBName 
+        vaultPath := dataDir "\" DBName
 
         ; 原始路径：微信公众号文章/2026-01-28
         fullPath := parentDir "/" noteName
@@ -2585,7 +2617,7 @@ GetUrlByRightClick(uiElement) {
     }
     if !menuHwnd
         Sleep 80
-    
+
     SendEvent "{Down 2}{Enter}"
 
     ; 4. 等待剪贴板
@@ -2596,3 +2628,45 @@ GetUrlByRightClick(uiElement) {
     Critical "Off"
     return "未获取到链接"
 }
+
+; 用 Bandizip 解压选中压缩文件的公共函数
+; targetMode: "here" = 解压到当前目录，"folder" = 解压到同名文件夹
+ExtractWithBandizip(targetMode) {
+    BandizipPath := "C:\Program Files\Bandizip\Bandizip.exe"
+    if !FileExist(BandizipPath) {
+        ToolTip("未找到 Bandizip: " BandizipPath)
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    ; 备份剪贴板
+    backup := ClipboardAll()
+    A_Clipboard := ""
+
+    ; 复制选中文件路径
+    SendEvent "{Ctrl Down}{Insert}{Ctrl Up}"
+    if !ClipWait(1) {
+        A_Clipboard := backup
+        ToolTip("未选中文件或复制失败")
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    selectedFile := Trim(A_Clipboard, " `t`r`n")
+    A_Clipboard := backup
+
+    ; 根据模式决定解压目标路径
+    SplitPath(selectedFile, , &parentDir, , &nameNoExt)
+    targetDir := (targetMode = "folder") ? parentDir "\" nameNoExt : parentDir
+
+    ; Bandizip x: 解压文件，-aoa 覆盖已有文件，-y 自动关闭
+    cmd := Format('"{1}" x -aoa -y "{2}" "{3}"', BandizipPath, selectedFile, targetDir)
+    Run(cmd, , "Hide")
+}
+
+#HotIf WinActive("ahk_class CabinetWClass")
+; Alt+E 解压到当前目录
+!e::ExtractWithBandizip("here")
+; Ctrl+Alt+E 解压到同名文件夹
+^!e::ExtractWithBandizip("folder")
+#HotIf
