@@ -4,12 +4,14 @@
 **本文引用的文件**
 - [apps/run_ChatGPT.ps1](file://apps/run_ChatGPT.ps1)
 - [apps/run_DMS.ps1](file://apps/run_DMS.ps1)
+- [run_bridge.ps1](file://run_bridge.ps1)
 - [setup-node-pnpm-lite.ps1](file://setup-node-pnpm-lite.ps1)
 - [nvm-node-pnpm-setup-guide.md](file://nvm-node-pnpm-setup-guide.md)
 - [rdp-connect.ps1](file://rdp-connect.ps1)
 - [get-source-panel-line-number/bridge.js](file://get-source-panel-line-number/bridge.js)
 - [get-source-panel-line-number/package.json](file://get-source-panel-line-number/package.json)
 - [get-source-panel-line-number/run_bridge.vbs](file://get-source-panel-line-number/run_bridge.vbs)
+- [get-source-panel-line-number/get_line_number.ahk](file://get-source-panel-line-number/get_line_number.ahk)
 - [browser_apps.json](file://browser_apps.json)
 - [hotkey.ahk](file://hotkey.ahk)
 - [hotkeys_public.ahk](file://hotkeys_public.ahk)
@@ -30,18 +32,20 @@
 10. [附录](#附录)
 
 ## 简介
-本文件面向需要在Windows环境中集成PowerShell脚本以启动浏览器应用（如ChatGPT、DMS）、管理Node.js与pnpm环境、以及通过RDP快速连接服务器的用户。文档覆盖以下主题：
+本文件面向需要在Windows环境中集成PowerShell脚本以启动浏览器应用（如ChatGPT、DMS）、管理Node.js与pnpm环境、通过RDP快速连接服务器以及启动Chrome DevTools桥接服务的用户。文档覆盖以下主题：
 - 应用启动脚本的编写与配置方法（PowerShell）
 - ChatGPT与DMS应用的PowerShell脚本实现与参数传递
+- Chrome DevTools桥接服务的PowerShell启动脚本与错误处理
 - 错误处理与日志记录机制
 - Node.js环境设置与pnpm包管理器使用
 - 脚本执行权限与安全配置
 - 常见问题排查与性能优化建议
 
 ## 项目结构
-该项目采用“功能模块化 + 工具链脚本”的组织方式：
+该项目采用"功能模块化 + 工具链脚本"的组织方式：
 - apps：应用启动脚本（生成快捷方式并注入AUMID）
 - get-source-panel-line-number：基于Chrome DevTools Remote Debugging桥接服务（Node.js + Chrome-Remote-Interface）
+- run_bridge.ps1：PowerShell桥接服务启动脚本，提供健康检查和错误处理
 - lib：AutoHotkey辅助库（JSON解析、UI自动化等）
 - templates：RDP模板与凭据保存说明
 - 根目录：PowerShell环境初始化脚本、RDP连接脚本、AutoHotkey主脚本及公共热键定义
@@ -52,10 +56,11 @@ subgraph "应用启动"
 A1["apps/run_ChatGPT.ps1"]
 A2["apps/run_DMS.ps1"]
 end
-subgraph "Node.js桥接"
+subgraph "Node.js桥接服务"
 N1["get-source-panel-line-number/bridge.js"]
 N2["get-source-panel-line-number/package.json"]
 N3["get-source-panel-line-number/run_bridge.vbs"]
+N4["run_bridge.ps1"]
 end
 subgraph "PowerShell环境"
 P1["setup-node-pnpm-lite.ps1"]
@@ -66,6 +71,7 @@ subgraph "AutoHotkey"
 H1["hotkey.ahk"]
 H2["hotkeys_public.ahk"]
 H3["browser_apps.json"]
+H4["get-source-panel-line-number/get_line_number.ahk"]
 end
 subgraph "模板与说明"
 T1["templates/README_SaveCredentials.md"]
@@ -75,46 +81,54 @@ A1 --> H1
 A2 --> H1
 H1 --> H3
 N1 --> N3
+N1 --> N4
 P1 --> P2
 P3 --> T1
+H4 --> N1
 ```
 
-图表来源
+**图表来源**
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
-- [get-source-panel-line-number/bridge.js:1-51](file://get-source-panel-line-number/bridge.js#L1-L51)
+- [get-source-panel-line-number/bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
 - [get-source-panel-line-number/package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
 - [get-source-panel-line-number/run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 - [browser_apps.json:1-48](file://browser_apps.json#L1-L48)
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
 - [hotkeys_public.ahk:1-57](file://hotkeys_public.ahk#L1-L57)
 - [templates/README_SaveCredentials.md:1-27](file://templates/README_SaveCredentials.md#L1-L27)
 - [README.md:1-2](file://README.md#L1-L2)
 
-章节来源
+**章节来源**
 - [README.md:1-2](file://README.md#L1-L2)
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
 
 ## 核心组件
 - 应用启动脚本（PowerShell）：生成Chrome快捷方式并注入AUMID，便于任务视图与系统托盘识别
 - Node.js桥接服务：通过Chrome DevTools Remote Debugging接口读取DevTools源码面板当前行号
+- PowerShell桥接启动器：run_bridge.ps1提供健康检查、错误处理和Node.js进程检测
 - Node.js/pnpm环境初始化：统一Node版本、配置npm/pnpm缓存与全局目录、激活pnpm via corepack
 - RDP连接脚本：支持短主机名解析、MAC优先解析、端口探测与日志记录
 - AutoHotkey主脚本：权限自提升、任务计划注册、应用切换与窗口控制、公共热键
+- AutoHotkey DevTools桥接：get_line_number.ahk提供完整的Chrome DevTools集成解决方案
 
-章节来源
+**章节来源**
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
-- [get-source-panel-line-number/bridge.js:1-51](file://get-source-panel-line-number/bridge.js#L1-L51)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
+- [get-source-panel-line-number/bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 
 ## 架构总览
-下图展示了从用户触发到最终应用启动/连接的端到端流程，涵盖PowerShell脚本、Node.js桥接、RDP连接与AutoHotkey集成。
+下图展示了从用户触发到最终应用启动/连接的端到端流程，涵盖PowerShell脚本、Node.js桥接、RDP连接与AutoHotkey集成。**新增**了PowerShell桥接启动器与AutoHotkey桥接方案的对比架构。
 
 ```mermaid
 sequenceDiagram
@@ -124,6 +138,7 @@ participant PS1 as "应用启动脚本(run_ChatGPT.ps1/run_DMS.ps1)"
 participant CH as "Chrome快捷方式"
 participant RDP as "RDP连接脚本(rdp-connect.ps1)"
 participant BR as "Node桥接服务(bridge.js)"
+participant PS2 as "PowerShell桥接启动器(run_bridge.ps1)"
 U->>AHK : 触发热键/命令
 AHK->>PS1 : 调用应用启动脚本
 PS1->>CH : 生成快捷方式并注入AUMID
@@ -131,16 +146,18 @@ CH-->>U : 启动浏览器应用
 AHK->>RDP : 触发RDP连接
 RDP->>RDP : 解析主机/端口探测/日志
 RDP-->>U : 启动mstsc.exe
-AHK->>BR : 读取DevTools行号可选
+AHK->>PS2 : 启动Node桥接服务
+PS2->>BR : 健康检查/启动Node服务
 BR-->>AHK : 返回行号/错误
 ```
 
-图表来源
+**图表来源**
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
+- [get-source-panel-line-number/bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
-- [get-source-panel-line-number/bridge.js:1-51](file://get-source-panel-line-number/bridge.js#L1-L51)
 
 ## 详细组件分析
 
@@ -161,13 +178,41 @@ SaveLnk --> InjectAUMID["定位快捷方式文件偏移并写入AUMID"]
 InjectAUMID --> End(["结束"])
 ```
 
-图表来源
+**图表来源**
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
 
-章节来源
+**章节来源**
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
+
+### PowerShell桥接服务启动器
+- 目标：提供run_bridge.ps1作为PowerShell版本的桥接服务启动器，替代原有的VBS脚本
+- 关键点：
+  - 健康检查：通过HTTP请求检查现有服务状态，避免重复启动
+  - 错误处理：使用Stop错误动作确保异常时停止执行
+  - 路径解析：动态计算bridge.js的绝对路径
+  - Node.js检测：验证node命令是否存在于PATH中
+  - 平滑启动：直接调用node命令启动bridge.js
+
+```mermaid
+flowchart TD
+Start(["开始"]) --> GetPath["解析bridge.js绝对路径"]
+GetPath --> CheckHealth["健康检查(localhost:3000/health)"]
+CheckHealth --> |已运行| Warn["提示服务已在运行"]
+CheckHealth --> |未运行| CheckNode["检查node命令"]
+CheckNode --> |不存在| Error["抛出错误: node not found"]
+CheckNode --> |存在| StartNode["启动Node服务"]
+Warn --> End(["结束"])
+Error --> End
+StartNode --> End
+```
+
+**图表来源**
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
+
+**章节来源**
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 
 ### Node.js桥接服务（DevTools行号读取）
 - 目标：通过Chrome DevTools Remote Debugging接口读取当前源码面板的行号
@@ -175,7 +220,8 @@ InjectAUMID --> End(["结束"])
   - 使用chrome-remote-interface列出targets，筛选类型为devtools的页面
   - 连接到DevTools自身调试实例，执行JS表达式读取UI.panels.sources当前编辑器的起始行
   - 暴露HTTP服务监听3000端口，返回行号或错误信息
-  - 通过VBS脚本启动Node服务
+  - **新增**：支持PowerShell和VBS两种启动方式，增强容错性
+  - **新增**：包含完整的AutoHotkey集成方案（get_line_number.ahk）
 
 ```mermaid
 sequenceDiagram
@@ -190,15 +236,17 @@ CDP-->>BR : 返回行号
 BR-->>AHK : JSON {lineNumber}
 ```
 
-图表来源
-- [get-source-panel-line-number/bridge.js:1-51](file://get-source-panel-line-number/bridge.js#L1-L51)
+**图表来源**
+- [get-source-panel-line-number/bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
 - [get-source-panel-line-number/run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
 - [get-source-panel-line-number/package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 
-章节来源
-- [get-source-panel-line-number/bridge.js:1-51](file://get-source-panel-line-number/bridge.js#L1-L51)
+**章节来源**
+- [get-source-panel-line-number/bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
 - [get-source-panel-line-number/run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
 - [get-source-panel-line-number/package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 
 ### Node.js与pnpm环境初始化（PowerShell）
 - 目标：统一Node版本、配置npm/pnpm缓存与全局目录、激活pnpm via corepack
@@ -224,11 +272,11 @@ EnvVar --> Verify["快速验证版本与配置"]
 Verify --> E(["结束"])
 ```
 
-图表来源
+**图表来源**
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 
-章节来源
+**章节来源**
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 
@@ -254,10 +302,10 @@ Probe --> |成功| Launch["启动mstsc.exe连接"]
 Launch --> End(["结束"])
 ```
 
-图表来源
+**图表来源**
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
 
-章节来源
+**章节来源**
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
 - [templates/README_SaveCredentials.md:1-27](file://templates/README_SaveCredentials.md#L1-L27)
 
@@ -266,54 +314,80 @@ Launch --> End(["结束"])
 - 应用切换与窗口控制：根据进程名/标题切换窗口显示/最小化/激活
 - 公共热键：提供常用文本片段与SQL事务模板等
 
-章节来源
+**章节来源**
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
 - [hotkeys_public.ahk:1-57](file://hotkeys_public.ahk#L1-L57)
+
+### AutoHotkey DevTools桥接集成
+- 目标：提供完整的Chrome DevTools集成解决方案，包含环境初始化、行号获取和诊断功能
+- 关键点：
+  - 自动检测和启动Chrome调试实例（9222端口）
+  - 启动Node.js桥接服务（3000端口）
+  - 提供F10热键初始化环境，Ctrl+Alt+L获取当前行号
+  - 包含全面的系统诊断功能，检查Chrome进程、CDP端口和服务状态
+
+**章节来源**
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 
 ## 依赖关系分析
 - 应用启动脚本依赖WScript.Shell COM对象与文件二进制写入能力
 - Node桥接服务依赖chrome-remote-interface与Node运行时
+- PowerShell桥接启动器依赖HTTP客户端和Node.js运行时
 - 环境初始化脚本依赖nvm、corepack、npm、pnpm命令
 - RDP脚本依赖.NET DNS解析、TCP客户端、ARP/邻居表查询
 - AutoHotkey主脚本依赖UIA库与系统任务计划
+- AutoHotkey DevTools桥接依赖WinHttp WinHttpRequest COM对象
 
 ```mermaid
 graph LR
 PS1["apps/run_ChatGPT.ps1"] --> WS["WScript.Shell"]
 PS2["apps/run_DMS.ps1"] --> WS
+PS3["run_bridge.ps1"] --> HTTP["HTTP客户端"]
 BR["bridge.js"] --> CDP["chrome-remote-interface"]
+BR --> HTTP
 ENV["setup-node-pnpm-lite.ps1"] --> NVM["nvm"]
 ENV --> COREPACK["corepack"]
 ENV --> PNPM["pnpm"]
 RDP["rdp-connect.ps1"] --> DNS["DNS解析/TCP探测"]
 AHK["hotkey.ahk"] --> UIA["UIA库"]
+AHK2["get_line_number.ahk"] --> WINHTTP["WinHttp.WinHttpRequest"]
 ```
 
-图表来源
+**图表来源**
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
-- [get-source-panel-line-number/bridge.js:1-51](file://get-source-panel-line-number/bridge.js#L1-L51)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
+- [get-source-panel-line-number/bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 
 ## 性能考虑
 - 浏览器启动参数优化：禁用扩展、同步、后台网络、默认应用、组件更新、特定功能与挂起监控，减少启动开销与资源占用
 - Node环境：将npm/pnpm缓存与全局目录迁移到D盘，避免C盘碎片化与IO瓶颈
 - RDP解析：短主机名解析优先使用邻居表/ARP，减少DNS往返；快速模式跳过端口探测以加速
 - AutoHotkey：窗口查找与切换尽量使用进程名/标题精确匹配，减少遍历成本
+- **新增**：PowerShell桥接启动器的健康检查避免重复启动，减少资源浪费
+- **新增**：AutoHotkey DevTools桥接的延迟启动机制，避免频繁的HTTP请求
 
-章节来源
+**章节来源**
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 
 ## 故障排查指南
 - 应用启动脚本
   - 快捷方式未生成：检查目标路径与权限；确认WScript.Shell可用
   - AUMID未生效：确认快捷方式文件偏移写入成功；检查目标浏览器路径
+- **新增**：PowerShell桥接启动器
+  - 服务未启动：检查bridge.js路径是否正确；确认Node.js已安装
+  - 健康检查失败：确认3000端口未被占用；检查防火墙设置
+  - 重复启动：检查run_bridge.ps1的健康检查逻辑是否正常工作
 - Node/pnpm环境
   - nvm未找到：确认nvm-windows已安装且在PATH中；修正镜像为官方源
   - Node版本不生效：检查nvm use后的当前版本；核对settings.txt中的path
@@ -325,17 +399,23 @@ AHK["hotkey.ahk"] --> UIA["UIA库"]
 - AutoHotkey
   - 无管理员权限：脚本会尝试自提升；若失败请手动以管理员运行
   - 任务计划未注册：检查schtasks命令执行结果与config.ini标记
+- **新增**：AutoHotkey DevTools桥接
+  - Chrome未启动：检查Chrome路径配置；确认调试端口9222可用
+  - 桥接服务离线：检查run_bridge.ps1或run_bridge.vbs是否正常运行
+  - 行号获取失败：使用F12诊断功能检查系统链路状态
 
-章节来源
+**章节来源**
 - [apps/run_ChatGPT.ps1:1-18](file://apps/run_ChatGPT.ps1#L1-L18)
 - [apps/run_DMS.ps1:1-18](file://apps/run_DMS.ps1#L1-L18)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)
 - [hotkey.ahk:1-200](file://hotkey.ahk#L1-L200)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 
 ## 结论
-本项目通过PowerShell脚本实现了浏览器应用的快速启动与系统识别、Node.js与pnpm环境的标准化配置、RDP连接的智能解析与日志记录，并结合AutoHotkey提供了高效的窗口控制与公共热键。整体方案具备良好的可维护性与扩展性，适合在Windows工作站中构建统一的开发与运维工具链。
+本项目通过PowerShell脚本实现了浏览器应用的快速启动与系统识别、Node.js与pnpm环境的标准化配置、RDP连接的智能解析与日志记录，以及**新增**的Chrome DevTools桥接服务的PowerShell启动方案。**新增**的run_bridge.ps1提供了更完善的错误处理和健康检查机制，而AutoHotkey的get_line_number.ahk则提供了完整的DevTools集成解决方案。整体方案具备良好的可维护性与扩展性，适合在Windows工作站中构建统一的开发与运维工具链。
 
 ## 附录
 - 执行权限与安全配置
@@ -345,11 +425,14 @@ AHK["hotkey.ahk"] --> UIA["UIA库"]
   - RDP凭据：参考模板说明，谨慎使用明文凭据，优先通过系统凭据管理器保存
 - 常用命令与验证
   - Node/pnpm版本与配置：使用脚本提供的快速验证输出
-  - DevTools桥接：启动run_bridge.vbs后访问http://localhost:3000/line-number
+  - **新增**：PowerShell桥接服务：运行run_bridge.ps1启动服务，访问http://localhost:3000/health检查状态
+  - **新增**：AutoHotkey DevTools桥接：运行get_line_number.ahk，使用F10初始化，Ctrl+Alt+L获取行号
   - RDP连接：使用脚本参数TargetHost/Mode/Mac/SkipProbe进行测试
 
-章节来源
+**章节来源**
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [templates/README_SaveCredentials.md:1-27](file://templates/README_SaveCredentials.md#L1-L27)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [get-source-panel-line-number/run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
+- [get-source-panel-line-number/get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
 - [rdp-connect.ps1:1-242](file://rdp-connect.ps1#L1-L242)

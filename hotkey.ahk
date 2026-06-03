@@ -2670,3 +2670,13 @@ ExtractWithBandizip(targetMode) {
 ; Ctrl+Alt+E 解压到同名文件夹
 ^!e::ExtractWithBandizip("folder")
 #HotIf
+
+
+; ^!+1 执行git commit,实现在不同开发工具中触发不同的快捷键（Code.exe 触发 Alt+9，idea64.exe 触发 Ctrl+K）              
+#HotIf WinActive("ahk_exe Code.exe") || WinActive("ahk_exe Qoder.exe")
+    ^!+1::Send "!9"
+#HotIf
+
+#HotIf WinActive("ahk_exe idea64.exe")
+    ^!+1::Send "^k"
+#HotIf
