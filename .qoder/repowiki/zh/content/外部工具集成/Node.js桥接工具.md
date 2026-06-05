@@ -17,10 +17,11 @@
 
 ## 更新摘要
 **变更内容**
-- 新增端口探测和健康检查功能的详细分析
-- 增强错误处理机制的说明
-- 更新UIA菜单交互功能的相关描述
-- 完善架构图和数据流图
+- 增强AutoHotkey DevTools桥接(get_line_number.ahk)提供行号解析和诊断功能
+- 改善源码面板导航体验的行号获取机制
+- 新增智能端口探测和健康检查功能
+- 增强错误处理和超时机制
+- 完善UIA菜单交互功能
 
 ## 目录
 1. [简介](#简介)
@@ -44,6 +45,7 @@ Node.js桥接工具是一个基于AutoHotkey v2和Node.js的跨平台开发辅�
 - **自动化支持**：可作为AutoHotkey热键绑定的一部分，实现一键获取行号
 - **跨平台兼容**：支持Windows平台下的各种浏览器和开发环境
 - **智能健康检查**：内置端口探测和进程状态监控功能
+- **增强诊断功能**：提供完整的系统链路状态检查和故障排除工具
 
 ## 项目结构
 
@@ -101,6 +103,7 @@ Node.js桥接服务是整个系统的核心组件，负责与Chrome DevTools进�
 3. **JavaScript执行**：在DevTools内部上下文中执行特定的JavaScript代码
 4. **HTTP服务暴露**：提供RESTful API接口供外部调用
 5. **端口探测和健康检查**：内置智能的端口占用检测和进程状态监控
+6. **错误处理和恢复**：提供多层次的错误处理和自动恢复机制
 
 ### AutoHotkey控制脚本 (get_line_number.ahk)
 
@@ -110,6 +113,8 @@ AutoHotkey脚本提供了用户友好的交互界面和自动化功能：
 2. **服务管理**：监控和管理Node.js桥接服务的状态
 3. **热键绑定**：提供快捷键操作，支持一键获取行号
 4. **诊断工具**：内置完整的系统健康检查功能
+5. **智能行号解析**：提供正则表达式解析和错误处理
+6. **超时和重试机制**：实现智能的超时处理和自动重试
 
 ### VBS启动器 (run_bridge.vbs)
 
@@ -121,6 +126,7 @@ AutoHotkey脚本提供了用户友好的交互界面和自动化功能：
 - 跨浏览器的UI元素定位和操作
 - 浏览器窗口和标签页的自动化控制
 - JavaScript执行和页面交互功能
+- 增强的菜单交互和导航能力
 
 **章节来源**
 - [bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
@@ -144,11 +150,13 @@ AHKService[AHK服务管理器]
 HTTPServer[HTTP服务器]
 HealthChecker[健康检查器]
 PortProbe[端口探测器]
+Diagnostic[诊断工具]
 end
 subgraph "桥接层"
 CDPServer[Chrome DevTools服务]
 JSEvaluator[JavaScript执行器]
 TargetFinder[目标发现器]
+LineParser[行号解析器]
 end
 subgraph "底层基础设施"
 Chrome[Chrome浏览器]
@@ -170,6 +178,8 @@ JSEvaluator --> TargetFinder
 TargetFinder --> Chrome
 AHKService --> NodeJS
 NodeJS --> FileSystem
+LineParser --> AHKService
+Diagnostic --> AHKService
 style AHK fill:#e1f5fe
 style HTTPServer fill:#f3e5f5
 style CDPServer fill:#e8f5e8
@@ -378,6 +388,47 @@ JavaScriptExecution --> Result[操作结果]
 **图表来源**
 - [UIA_Browser.ahk:458-577](file://lib/UIA_Browser.ahk#L458-L577)
 
+### 增强的诊断和故障排除功能
+
+**新增功能**：系统现在提供完整的诊断工具和故障排除能力：
+
+#### 系统链路检查
+```mermaid
+flowchart TD
+Start([开始诊断]) --> CheckChrome["检查Chrome进程"]
+CheckChrome --> CheckPort["检查9222端口"]
+CheckPort --> CheckBridge["检查Node.js服务"]
+CheckBridge --> CheckHealth["检查健康检查端点"]
+CheckHealth --> Report["生成诊断报告"]
+Report --> End([结束])
+CheckChrome --> ChromeOK{"Chrome运行？"}
+CheckChrome --> ChromeFail["Chrome未运行"]
+CheckPort --> PortOK{"端口开放？"}
+CheckPort --> PortFail["端口关闭"]
+CheckBridge --> BridgeOK{"服务在线？"}
+CheckBridge --> BridgeFail["服务离线"]
+CheckHealth --> HealthOK{"健康检查通过？"}
+CheckHealth --> HealthFail["健康检查失败"]
+```
+
+**图表来源**
+- [get_line_number.ahk:121-148](file://get-source-panel-line-number/get_line_number.ahk#L121-L148)
+
+#### 诊断工具使用
+系统提供了完整的环境配置验证流程：
+
+1. **Node.js环境验证**：检查版本和依赖
+2. **Chrome环境验证**：检查调试端口和权限
+3. **网络环境验证**：检查本地网络连通性
+4. **文件系统验证**：检查脚本文件的可访问性
+5. **UIA框架验证**：检查UI Automation支持
+
+#### 增强的错误处理
+- **智能超时处理**：1秒超时限制
+- **正则表达式解析**：`"lineNumber":(\d+)`模式匹配
+- **错误状态码**：`"Not in Source Panel"`和`"Bridge Offline"`
+- **健康检查集成**：`/health`端点提供进程状态
+
 **章节来源**
 - [bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
 - [get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
@@ -403,6 +454,8 @@ Service[HTTP服务]
 Connector[CDP连接器]
 Health[健康检查器]
 PortProbe[端口探测器]
+LineParser[行号解析器]
+Diagnostic[诊断工具]
 end
 Bridge --> Service
 Bridge --> Connector
@@ -413,6 +466,8 @@ Service --> HTTP
 Connector --> FS
 Health --> HTTP
 PortProbe --> HTTP
+LineParser --> Bridge
+Diagnostic --> Bridge
 ```
 
 **图表来源**
@@ -647,18 +702,21 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **可靠性**：完善的错误处理和恢复机制
 - **智能健康检查**：内置端口探测和进程监控功能
 - **UIA集成**：提供丰富的浏览器自动化能力
+- **增强诊断功能**：完整的系统链路检查和故障排除工具
 
 ### 用户体验优化
 - **简单易用**：通过热键绑定提供一键式操作
 - **可视化反馈**：实时显示获取结果
 - **智能诊断**：内置完整的故障排除工具
 - **多浏览器支持**：通过UIA框架支持多种浏览器
+- **智能行号解析**：提供正则表达式解析和错误处理
 
 ### 扩展性设计
 - **模块化架构**：清晰的职责分离便于维护和扩展
 - **标准化接口**：HTTP API便于第三方集成
 - **跨平台兼容**：基于Web技术栈的天然跨平台特性
 - **UIA框架**：提供强大的浏览器自动化基础
+- **智能超时处理**：1秒超时限制和自动重试机制
 
 该工具不仅解决了具体的开发需求，更重要的是展示了一种将现代Web技术与传统桌面应用相结合的有效模式，为类似的技术集成项目提供了宝贵的参考经验。
 
@@ -704,6 +762,7 @@ npm list chrome-remote-interface
 - **集成开发**：与其他IDE或编辑器集成
 - **自动化测试**：在自动化测试中获取代码位置信息
 - **UIA自动化**：利用UIA框架进行复杂的浏览器操作
+- **系统诊断**：使用Ctrl+F12热键进行全面的系统状态检查
 
 ### 维护和更新
 

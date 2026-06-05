@@ -2044,6 +2044,13 @@ IsRdpContext() {
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
+^#q::
+{
+    ahk_exe := "qianwen.exe"
+	APP_PATH := A_ProgramsCommon "\千问.lnk"
+
+    ToggleWindow(ahk_exe, APP_PATH)
+}
 ; ONLYOFFICE
 #o::
 {
