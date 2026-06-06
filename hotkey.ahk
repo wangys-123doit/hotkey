@@ -2354,6 +2354,15 @@ ActivateApp(app) {
     ; 精准匹配 URL
     if hwndCache.Has(targetURL) {
         ahk_id := hwndCache[targetURL]
+        if !WinExist("ahk_id " ahk_id) {
+            ; 窗口已关闭，重建缓存
+            BuildBrowserCache()
+            if hwndCache.Has(targetURL) {
+                ahk_id := hwndCache[targetURL]
+            } else {
+                return
+            }
+        }
         if WinActive("ahk_id " ahk_id) {
             WinMinimize("ahk_id " ahk_id)
         } else {
@@ -2361,8 +2370,18 @@ ActivateApp(app) {
         }
         return
     }
-    ; 2️找不到 → 启动 App
+    ; 2️找不到 → 启动 App 并等待窗口出现，并且重建缓存
     Run APP_DIR "\" app["name"] ".lnk"
+    winTitle := app["title"]
+    if WinWait(winTitle " ahk_exe " exe,, 5) {
+        BuildBrowserCache()
+        if hwndCache.Has(targetURL) {
+            ahk_id := hwndCache[targetURL]
+            WinActivate("ahk_id " ahk_id)
+        } else {
+            WinActivate(winTitle)
+        }
+    }
 }
 
 ; Win + `热键打开Obsidian
