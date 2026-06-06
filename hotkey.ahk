@@ -841,7 +841,12 @@ ScriptLifecycle.RegisterReload(BuildBrowserCache)
 
 ScriptLifecycle.Init()
 
-^!r::ScriptLifecycle.Reload()
+^!r::
+{
+    ScriptLifecycle.Reload()
+    ; 重新构建浏览器缓存
+    BuildBrowserCache()
+}
 
 GroupAdd "ShellGroup", "ahk_exe mintty.exe"
 GroupAdd "ShellGroup", "ahk_exe Xshell.exe"
@@ -1795,104 +1800,6 @@ QuoteArg(s) {
         WinSetAlwaysOnTop(-1, "ahk_id " hwnd) ; -1 = 切换
 }
 
-; Prtsc键或者LCtrl都能打开chrome
-; 仅在非 RDP 场景下允许触发，避免连接/切换 RDP 时误发 Win 键
-; #HotIf !IsRdpContext()
-SC137::
-RCtrl Up:: {
-    if WinExist("ahk_exe chrome.exe") {
-        SendEvent "{LWin Down}2{LWin Up}"
-        ; 检查窗口是否已激活
-        /* if WinActive("ahk_exe " ahk_exe) {
-            WinMinimize
-        } else {
-            WinActivate
-        } */
-    } else {
-        LaunchChromeWithDebugPort()
-    }
-}
-LaunchChromeWithDebugPort() {
-    chromePath := A_ProgramFiles "\Google\Chrome\Application\chrome.exe"
-    if !FileExist(chromePath) {
-        chromePath := A_ProgramFiles " (x86)\Google\Chrome\Application\chrome.exe"
-    }
-
-    profileDir := A_Temp "\chrome_debug_profile_9223"
-    try {
-        DirCreate(profileDir)
-    } catch {
-    }
-
-    if FileExist(chromePath) {
-        Run('"' chromePath '" --remote-debugging-port=9223 --user-data-dir="' profileDir '"')
-    } else {
-        Run('chrome.exe --remote-debugging-port=9223 --user-data-dir="' profileDir '"')
-    }
-}
-
-IsRdpContext() {
-    ; 远程会话中，或当前焦点在 mstsc 窗口，都视为 RDP 场景
-    return IsWindowsRemoteSession()
-        || WinActive("ahk_exe mstsc.exe")
-        || WinActive("ahk_class TscShellContainerClass")
-        || WinActive("ahk_class TscShellWndClass")
-}
-
-; [新加] 复制并在浏览器搜索
-#f10::
-{
-    ; 等待 Win 键真实松开，避免后续按键被解释为 Win 组合键（如 Win+L）
-    KeyWait "LWin"
-    KeyWait "RWin"
-    Send("{Ctrl up}{Shift up}{Alt up}")
-
-    ; 1. 清空剪贴板并直接发送复制指令（绕过 CapsLock 钩子，直接执行复制动作更稳定）
-    A_Clipboard := ""
-    if WinActive("ahk_group ShellGroup") {
-        SendEvent("{Ctrl Down}{Insert}{Ctrl Up}")
-    } else {
-        SendEvent("^{c}")
-    }
-
-    if !ClipWait(1) {
-
-        SetTimer(() => ToolTip(), -2000)
-        return
-    }
-
-    ; 2. 若当前已在 Chrome 应用内，则跳过等待与切换
-    success := false
-    if WinActive("ahk_exe chrome.exe") {
-        success := true
-    } else {
-        ; 直接发送打开浏览器的快捷键 (Win+2)
-        ; 使用 AHK 原生的 #2 语法，防止拆分发送导致 Windows 识别为按下了单独的 Win 键（弹出开始菜单）
-        LaunchChromeWithDebugPort()
-
-        ; 3. 等待 Chrome 浏览器被激活
-        Loop 30 {
-            if WinActive("ahk_exe chrome.exe") {
-                success := true
-                break
-            }
-            Sleep 100
-        }
-    }
-
-    if (success) {
-        Sleep 200 ; 保留一点小缓冲，防止刚刚激活时输入被吞
-        ; 4. 新建标签页 (Ctrl+T)，然后定位地址栏 (Ctrl+L)，粘贴文本并回车搜索
-        ; 注意：新建标签页的标准快捷键是 Ctrl+T (`^t`)
-        ; SendInput("^t")
-        ; Sleep 100 ; 给浏览器哪怕一点点新建标签页和聚焦地址栏的渲染时间
-        SendInput("^t^l^v{Enter}")
-    } else {
-        ToolTip("未检测到 Chrome 窗口被激活")
-        SetTimer(() => ToolTip(), -2000)
-    }
-}
-
 ;~ LWin & d:: SendEvent "{LWin Down}1{LWin Up}" 激活idea
 
 +space::
@@ -2058,6 +1965,13 @@ IsRdpContext() {
 	APP_PATH := A_ProgramsCommon "\ONLYOFFICE\ONLYOFFICE.lnk"
 
     ToggleWindow(ahk_exe, APP_PATH)
+}
+; outlook
+#^o::
+{
+    ahk_exe := "olk.exe"
+    APP_PROTOCOL := "ms-outlook:"
+    ToggleWindow(ahk_exe, APP_PROTOCOL)
 }
 ; 打开钉钉
 ^#d::

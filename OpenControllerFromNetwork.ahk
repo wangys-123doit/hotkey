@@ -69,10 +69,296 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
     ; }
 	
 	
-	; 使用当前 Chrome 窗口另起标签页执行
-Run("chrome.exe chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false")
+	; 通过 CDP 协议在已启动的调试 Chrome（默认已用 DebugProfile + 9223 端口）中另起标签页执行
+	; 前提：调试 Chrome 已经通过 PrtSc/RCtrl 启动，调试端口 9223 已可用
+	; 使用 127.0.0.1（Chrome 只监听 IPv4，localhost 可能被解析为 IPv6 ::1）
+	{
+		url := "chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false"
+		try {
+			http := ComObject("WinHttp.WinHttpRequest.5.1")
+			http.SetTimeouts(3000, 3000, 3000, 3000)
+			http.Open("PUT", "http://127.0.0.1:9223/json/new?" url, false)
+			http.Send()
+			if (http.Status != 200) {
+				; 某些 Chrome 版本 POST 才能 /json/new，回退到 POST
+				http := ComObject("WinHttp.WinHttpRequest.5.1")
+				http.SetTimeouts(3000, 3000, 3000, 3000)
+				http.Open("POST", "http://127.0.0.1:9223/json/new?" url, false)
+				http.Send()
+			}
+		} catch Error as e {
+			ToolTip("CDP 打开标签页失败（请确认调试 Chrome 已启动）：`n" e.Message)
+			SetTimer(() => ToolTip(), -3000)
+		}
+	}
 }
 #HotIf
+
+; Prtsc键或者LCtrl都能打开chrome
+; 仅在非 RDP 场景下允许触发，避免连接/切换 RDP 时误发 Win 键
+; #HotIf !IsRdpContext()
+SC137::
+RCtrl Up:: {
+    if WinExist("ahk_exe chrome.exe") && IsChromeDebugPortReady(9223) {
+        SendEvent "{LWin Down}2{LWin Up}"
+    } else {
+        LaunchChromeWithDebugPort()
+    }
+}
+
+; ==========================================================
+; 检测 Chrome 调试端口是否已开启
+; 关键：必须用 127.0.0.1（Chrome 只监听 IPv4，localhost 可能被解析为 IPv6 ::1 导致失败）
+IsChromeDebugPortReady(port) {
+    try {
+        http := ComObject("WinHttp.WinHttpRequest.5.1")
+        http.SetTimeouts(500, 500, 500, 500)
+        http.Open("GET", "http://127.0.0.1:" port "/json/version", false)
+        http.Send()
+        return (http.Status = 200)
+    } catch {
+        return false
+    }
+}
+
+; 定位 chrome.exe 的真实路径（避开任何快捷方式）
+GetChromeExePath() {
+    candidates := [
+        "C:\Program Files\Google\Chrome\Application\chrome.exe",
+        "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        EnvGet("LocalAppData") . "\Google\Chrome\Application\chrome.exe"
+    ]
+    for path in candidates {
+        if FileExist(path)
+            return path
+    }
+    return ""
+}
+
+; 收集所有可能的 Chrome 快捷方式位置
+GetChromeShortcutPaths() {
+    paths := []
+    candidates := [
+        A_ProgramsCommon "\Google Chrome.lnk",
+        A_Programs "\Google Chrome.lnk",
+        A_Desktop "\Google Chrome.lnk",
+        A_DesktopCommon "\Google Chrome.lnk",
+        EnvGet("AppData") . "\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Google Chrome.lnk",
+        EnvGet("AppData") . "\Microsoft\Internet Explorer\Quick Launch\Google Chrome.lnk"
+    ]
+    for p in candidates {
+        if FileExist(p)
+            paths.Push(p)
+    }
+    return paths
+}
+
+; 修复单个快捷方式：确保 Arguments 含 --remote-debugging-port=port
+FixChromeShortcutDebugPort(lnkPath, port := 9223) {
+    try {
+        sc := ComObject("WScript.Shell").CreateShortcut(lnkPath)
+        args := sc.Arguments
+        cleaned := Trim(RegExReplace(args, "i)\s*--remote-debugging-port=\d+\s*", " "))
+        sc.Arguments := "--remote-debugging-port=" port (cleaned = "" ? "" : " " cleaned)
+        sc.Save()
+        return ""
+    } catch Error as e {
+        return e.Message
+    }
+}
+
+; 批量修复快捷方式
+FixChromeShortcutsBatch(paths, port := 9223) {
+    fixed := 0
+    failReport := ""
+    for lnkPath in paths {
+        err := FixChromeShortcutDebugPort(lnkPath, port)
+        if err = ""
+            fixed++
+        else
+            failReport .= "❌ " lnkPath "`n    " err "`n"
+    }
+    return [fixed, failReport]
+}
+
+; 验证所有 Chrome 快捷方式是否含有 --remote-debugging-port 参数；发现缺失时弹窗询问是否一键修复
+VerifyChromeShortcutDebugPort(port := 9223) {
+    paths := GetChromeShortcutPaths()
+    if paths.Length = 0 {
+        MsgBox("未找到任何 Chrome 快捷方式", "验证失败", 16)
+        return false
+    }
+    report := ""
+    okCount := 0
+    missingPaths := []
+    for lnkPath in paths {
+        try {
+            sc := ComObject("WScript.Shell").CreateShortcut(lnkPath)
+            args := sc.Arguments
+            hasPort := InStr(args, "--remote-debugging-port=" port)
+            if hasPort {
+                okCount++
+            } else {
+                missingPaths.Push(lnkPath)
+            }
+            report .= (hasPort ? "✅" : "❌") " " lnkPath "`n    Args: " (args = "" ? "(空)" : args) "`n`n"
+        } catch Error as e {
+            report .= "⚠ " lnkPath "`n    读取失败: " e.Message "`n`n"
+        }
+    }
+    summary := "已含调试端口参数: " okCount " / " paths.Length
+    if missingPaths.Length = 0 {
+        MsgBox(report "`n" summary, "快捷方式验证结果", 64)
+        return true
+    }
+    answer := MsgBox(report "`n" summary
+        "`n`n是否一键为以上❌项目补充 --remote-debugging-port=" port " 参数？"
+        "`n注意：修改 C:\Users\Public\Desktop 等公共路径需要脚本以管理员身份运行。",
+        "快捷方式验证结果", "YesNo Icon!")
+    if answer != "Yes"
+        return false
+    result := FixChromeShortcutsBatch(missingPaths, port)
+    msg := "修复完成：" result[1] " / " missingPaths.Length
+    if result[2] != ""
+        msg .= "`n`n失败项（常见原因：需管理员权限）：`n" result[2]
+    MsgBox(msg, "修复结果", result[2] = "" ? 64 : 48)
+    return result[1] > 0
+}
+
+; 启动 Chrome 并确保调试端口生效。
+; Chrome 136+ 强制要求：--remote-debugging-port 必须配合 --user-data-dir=<非默认目录>
+; 官方文档：https://developer.chrome.com/blog/remote-debugging-port
+; 因此使用 %LocalAppData%\Google\Chrome\DebugProfile 作为永久调试配置目录（非临时目录，保留会话状态）
+LaunchChromeWithDebugPort() {
+    debugPort := 9223
+    debugProfileDir := EnvGet("LocalAppData") . "\Google\Chrome\DebugProfile"
+
+    ; 1. 调试端口已就绪 → 直接激活窗口
+    if IsChromeDebugPortReady(debugPort) {
+        if WinExist("ahk_exe chrome.exe")
+            WinActivate()
+        return
+    }
+
+    ; 2. 存在任何 chrome.exe 进程但调试端口未启用
+    ;    原因：Chrome 只有第一个进程的命令行参数生效，后续启动会转发给主进程。
+    ;    必须全部 kill 后重启才能启用调试端口。
+    if ProcessExist("chrome.exe") {
+        ToolTip("检测到 Chrome 后台进程未开启调试端口，正在重启...")
+        loop {
+            pid := ProcessExist("chrome.exe")
+            if !pid
+                break
+            ProcessClose(pid)
+            Sleep(150)
+        }
+        Sleep(800)
+    }
+
+    ; 3. 确保永久调试配置目录存在
+    try {
+        if !DirExist(debugProfileDir)
+            DirCreate(debugProfileDir)
+    } catch Error as e {
+        ToolTip()
+        MsgBox("创建调试配置目录失败: " e.Message, "启动失败", 16)
+        return
+    }
+
+    ; 4. 直接调用 chrome.exe 显式拼接参数（不依赖任何 .lnk）
+    ;    必须同时包含 --remote-debugging-port 和 --user-data-dir=<非默认>
+    chromeExe := GetChromeExePath()
+    if chromeExe = "" {
+        ToolTip()
+        MsgBox("未找到 chrome.exe，请检查 Chrome 安装路径", "启动失败", 16)
+        return
+    }
+    try {
+        Run(Format('"{1}" --remote-debugging-port={2} --user-data-dir="{3} --variations-override-country=us"'
+            , chromeExe, debugPort, debugProfileDir))
+    } catch Error as e {
+        ToolTip()
+        MsgBox("启动 Chrome 失败: " e.Message, "启动失败", 16)
+        return
+    }
+
+    ; 5. 轮询调试端口，确认是否生效（最多等 8 秒）
+    Loop 40 {
+        Sleep(200)
+        if IsChromeDebugPortReady(debugPort) {
+            ToolTip()
+            return
+        }
+    }
+    ToolTip()
+    MsgBox("Chrome 已启动但调试端口 " debugPort " 未开启。`n可按 Win+Alt+9 验证快捷方式参数。", "调试端口未开启", 48)
+}
+
+; 按 Win+Alt+9 手动验证所有 Chrome 快捷方式的调试端口参数
+; #!9::VerifyChromeShortcutDebugPort(9223)
+
+IsRdpContext() {
+    ; 远程会话中，或当前焦点在 mstsc 窗口，都视为 RDP 场景
+    return IsWindowsRemoteSession()
+        || WinActive("ahk_exe mstsc.exe")
+        || WinActive("ahk_class TscShellContainerClass")
+        || WinActive("ahk_class TscShellWndClass")
+}
+
+; [新加] 复制并在浏览器搜索
+#f10::
+{
+    ; 等待 Win 键真实松开，避免后续按键被解释为 Win 组合键（如 Win+L）
+    KeyWait "LWin"
+    KeyWait "RWin"
+    Send("{Ctrl up}{Shift up}{Alt up}")
+
+    ; 1. 清空剪贴板并直接发送复制指令（绕过 CapsLock 钩子，直接执行复制动作更稳定）
+    A_Clipboard := ""
+    if WinActive("ahk_group ShellGroup") {
+        SendEvent("{Ctrl Down}{Insert}{Ctrl Up}")
+    } else {
+        SendEvent("^{c}")
+    }
+
+    if !ClipWait(1) {
+
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    ; 2. 若当前已在 Chrome 应用内，则跳过等待与切换
+    success := false
+    if WinActive("ahk_exe chrome.exe") {
+        success := true
+    } else {
+        ; 直接发送打开浏览器的快捷键 (Win+2)
+        ; 使用 AHK 原生的 #2 语法，防止拆分发送导致 Windows 识别为按下了单独的 Win 键（弹出开始菜单）
+        LaunchChromeWithDebugPort()
+
+        ; 3. 等待 Chrome 浏览器被激活
+        Loop 30 {
+            if WinActive("ahk_exe chrome.exe") {
+                success := true
+                break
+            }
+            Sleep 100
+        }
+    }
+
+    if (success) {
+        Sleep 200 ; 保留一点小缓冲，防止刚刚激活时输入被吞
+        ; 4. 新建标签页 (Ctrl+T)，然后定位地址栏 (Ctrl+L)，粘贴文本并回车搜索
+        ; 注意：新建标签页的标准快捷键是 Ctrl+T (`^t`)
+        ; SendInput("^t")
+        ; Sleep 100 ; 给浏览器哪怕一点点新建标签页和聚焦地址栏的渲染时间
+        SendInput("^t^l^v{Enter}")
+    } else {
+        ToolTip("未检测到 Chrome 窗口被激活")
+        SetTimer(() => ToolTip(), -2000)
+    }
+}
+
 
 ;~ 3、主流程
 OpenControllerFromNetwork()
