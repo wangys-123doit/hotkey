@@ -20,6 +20,7 @@ if (A_Args.Length > 0 && A_Args[1] = "--focus-vscode") {
 
 #Include hotkeys_public.ahk
 #Include OpenControllerFromNetwork.ahk
+#Include superFlow.ahk
 #Include rdp.ahk
 #Include CycleExplorerSwitcher.ahk
 ; 可选包含：文件不存在时忽略，不会在加载阶段报错
@@ -864,6 +865,28 @@ CapsLock::
         SendEvent "{Ctrl Down}{c}{Ctrl Up}"
     }
 }
+
+; ^!+3: 文本光标执行复制，箭头光标发送 Alt+Left（后退）
+#HotIf WinActive("ahk_exe chrome.exe") || WinActive("ahk_class CabinetWClass")
+^!+3:: {
+    if A_Cursor = "IBeam" {
+        ; 文本光标，执行复制
+        Send "{Ctrl Down}{c}{Ctrl Up}"
+    } else {
+        ; 箭头光标，发送 Alt+Left 后退
+        Send "!{Left}"
+    }
+}
+^!+4:: {
+    if A_Cursor = "IBeam" {
+        ; 文本光标，执行粘贴
+        Send "{Ctrl Down}{v}{Ctrl Up}"
+    } else {
+        ; 箭头光标，发送 Alt+Right 前进
+        Send "!{Right}"
+    }
+}
+#HotIf
 ;~ CapsLock 双击触发粘贴操作
 /* global doubleClickInterval := 300 ; 双击判断的时间间隔（毫秒）
 global lastPressTime := 0 ; 记录上次 CapsLock 按下的时间
@@ -1005,67 +1028,6 @@ GetMonitorTargetByHost(hostname, defaultValue) {
     }
 }
 
-
-/* global doubleClickInterval := 180 ; 双击判断的时间间隔（毫秒）
-global capsPending := false ; 单击行为必须延迟执行，直到确认不是双击
-
-
-
-$CapsLock::
-{
-    global doubleClickInterval
-    global capsPending
-    if (capsPending) {
-        ; 第二次按下 → 双击
-        capsPending := false
-        SetTimer(CapsSingle, 0)  ; 取消单击定时器
-        ; 双击执行粘贴操作
-        if WinActive("ahk_group ShellGroup") {
-            SendInput "{Shift Down}{Insert}{Shift Up}"
-        } else {
-            SendInput "{Ctrl Down}v{Ctrl Up}"
-
-        }
-
-        return
-    }
-
-    ; 第一次按下
-    capsPending := true
-    SetTimer(CapsSingle, -doubleClickInterval)
-            ;  等 CapsLock 彻底释放
-        KeyWait "CapsLock"
-
-} */
-;~ Caps键单击
-/* CapsSingle() {
-    global capsPending
-    if (!capsPending)
-        return
-
-    capsPending := false
-    ; 确保 CapsLock 已彻底释放
-    ;~ KeyWait "CapsLock"
-
-    ; 给系统一点处理时间（非常关键）
-    ;~ Sleep 20
-
-    backup := A_Clipboard
-    A_Clipboard := ""
-    ; 单击执行复制操作
-    if WinActive("ahk_group ShellGroup") {
-        SendInput "{Ctrl Down}{Insert}{Ctrl Up}"
-    } else {
-        SendInput "{Ctrl Down}c{Ctrl Up}"
-
-    }
-   if !ClipWait(0.5) {
-       MsgBox '复制失败！'
-       A_Clipboard := backup
-       return
-    }
-} */
-
 $!CapsLock::
 {
     KeyWait "CapsLock"
@@ -1080,42 +1042,6 @@ $#CapsLock:: ; 点击 win+CapsLock键打开有道
 
 ; 打开有道
 openYoudao(){
-
-    ;~ ahk_exe := "YoudaoDict.exe"
-	;~ APP_PATH := "C:\Users\X1\AppData\Local\youdao\dict\Application\YoudaoDict.exe"
-        ;~ WinActivate  ; Activate the window found above
-    ;~ if WinExist("ahk_exe " ahk_exe){
-		    ;~ ; 等待窗口激活（替换为实际窗口标题或 ahk_exe）
-    ;~ }else{
-        ;~ Run APP_PATH  ; Open a new Notepad window
-		;~ ; 等待窗口激活（替换为实际窗口标题）
-		;~ if !WinWaitActive(APP_PATH, , 5) {
-			;~ MsgBox "窗口未找到或未激活"
-			;~ return
-		;~ }
-	;~ }
-;~ WinGetClientPos &x, &y, &width, &height, "ahk_exe " ahk_exe
-
-;~ MsgBox "Calculator is at " x "," y " and its size is " width "x" height
-;~ logMessage :="`nCalculator is at " x "," y " and its size is " width "x" height
-;~ OutputDebug logMessage
-
-
-
-    ;~ ; 获取窗口位置和尺寸
-    ;~ if !(width>0) {
-        ;~ MsgBox("窗口位置无法获取3444")
-        ;~ return
-    ;~ }
-
-    ;~ ; 计算点击位置（例如窗口中间）
-    ;~ clickX := x + (width / 2)
-    ;~ clickY := y + 230
-;~ logMessage2 :="`nclickX is at " clickX "," clickY " and its size is " width "x" height
-;~ OutputDebug logMessage2
-    ;~ ; 模拟鼠标点击
-			;~ Sleep 1000
-			    ;~ Click(clickX, clickY)
     ; 发送 Tab 键切换焦点
     ahk_exe := "YoudaoDict.exe"
     ;~ 如果已启动
@@ -1144,7 +1070,7 @@ openYoudao(){
 
 }
 ; 点击 Shift+win+v键 打开或关闭clash系统代理
-isProxy := 0  ; 初始值为 0
+/* isProxy := 0  ; 初始值为 0
 #+v::
 {
     global isProxy  ; 引用全局变量 isProxy
@@ -1196,320 +1122,24 @@ isProxy := 0  ; 初始值为 0
         ToolTip("")  ; 关闭工具提示
     }
 
-}
+} */
+
+; 发送 Ctrl+Alt+C 快捷键，开关灰色滤镜
 #a::
 {
     SendInput "{LWin Down}{Ctrl Down}c{Ctrl Up}{LWin Up}"
     SendInput "{Ctrl Up}{LWin Up}{RWin Up}"
 }
-
+; 禁用 Ctrl+Shift+C 快捷键
 $#^c::return
-
+; Alibaba Cloud Client
 #^a::
 {
 	ahk_exe := "Alibaba Cloud Client.exe"
     APP_PATH := A_ProgramsCommon "\Alibaba Cloud Client.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
-
-; ==============================
-; 窗口选择器对象
-; ==============================
-global Switcher := Map()
-
-; ==============================
-; 初始化 窗口选择器对象
-; ahk_class:
-; CabinetWClass：文件资源管理器
-; XLMAIN：Excel
-; ==============================
-InitSwitcher(ahk_class) {
-    global Switcher
-    ;~ ToolTip(ahk_class)
-    ; 获取所有符合条件的窗口句柄（按类名“CabinetWClass”）
-    windows := []
-    Switch ahk_class
-    {
-    ;~ 判断如果是标点符号则发送shift left 只复制光标前一位标点符号
-    Case "windowsApp":
-
-    Case "pinyin":
-        ;~ 非标点符号则则发送ctrl+shift left复制整个拼音字母
-        SendInput "{Ctrl Down}{Shift Down}{Left}{Ctrl Up}{Shift Up}"
-    Default:
-        windows := WinGetList("ahk_class " ahk_class)
-
-    }
-    ; 如果只有一个窗口，则return不显示窗口列表弹窗
-    if (windows.Length = 1) {
-        hwnd := windows[1]
-
-        if WinActive("ahk_id " hwnd) {
-            WinMinimize "ahk_id " hwnd
-        } else {
-            WinActivate "ahk_id " hwnd
-        }
-        return
-    }
-    ;~ appMap := Map()
-    ;~ appMap["CabinetWClass"] := "文件资源管理器"
-    ;~ appMap["XLMAIN"] := "Excel"
-    ;~ 查找如果有AutoHotkeyGUI则先WinClose，然后重新生成AppListView
-    ;~ if WinExist("ahk_class AutoHotkeyGUI"){
-
-        ;~ windows_gui := WinGetList("ahk_class AutoHotkeyGUI")
-        ;~ for winID in windows_gui {
-            ;~ ;
-            ;~ if(WinGetTitle(winID) == appMap[ahk_class] and WinExist("ahk_id " winID)){
-                 ;~ WinClose
-                ;~ break
-            ;~ }
-        ;~ }
-
-    ;~ }
-
-
-    if Switcher.Has("initialized")
-        return
-
-    Switcher["initialized"] := true
-
-    ; 创建 GUI
-    Switcher.gui := Gui()
-    Switcher.gui.Opt("+AlwaysOnTop -Caption +ToolWindow")
-    ; 显示窗口列表（调试用）
-    LV := Switcher.gui.AddListView("r8 w200 vColorChoice", ["#", "文件名"])
-    Switcher.LV := LV   ; 保存到 Switcher 对象里
-
-    winList := []
-    for winID in windows {
-        ;MsgBox WinGetTitle(winID)
-        word_array := StrSplit(WinGetTitle(winID), " - ")
-        if(A_Index == 1){
-            ;~ MyGuiSwitcher.gui.Title := word_array[2]
-        }
-        LV.Add(, A_Index, word_array[1])
-
-        winList.Push(A_Index)
-    }
-    Switcher["winListLength"] := winList.Length
-
-    LV.OnEvent("Click", LV_Click)
-    LV_Click(LV, RowNumber)
-    {
-        if (!RowNumber) {
-            return
-        }
-        HotkeyActivateWindow(RowNumber)
-    }
-    ;~ 数字热键绑定激活对应窗口 todo
-    ;~ Loop winList.Length {
-        ;~ if (A_Index > 9)
-            ;~ break
-        ;~ Hotkey("~" . A_Index, HotkeyActivateWindow)
-    ;~ }
-
-    HotkeyActivateWindow(ThisHotkey) {
-        index := RegExReplace(ThisHotkey, "^\D+")
-
-        if windows.Has(index) && WinExist("ahk_id " windows[index]) {
-            WinActivate("ahk_id " windows[index])
-        } else {
-            LV.Delete(index)
-        }
-    }
-
-
-    ; 尺寸 & 位置
-    Switcher.w := 200
-    Switcher.h := 160
-    Switcher.showX := 0
-    Switcher.hiddenX := -Switcher.w
-    Switcher.y := (A_ScreenHeight - Switcher.h) // 2
-
-    ; 状态
-    Switcher["visible"] := false
-    Switcher.sliding := false
-    Switcher.lastHover := 0
-
-    SlideIn()
-    ;~ Switcher.gui.Show("NoActivate")
-
-    ; 初始隐藏
-    ;~ Switcher.gui.Show("x" Switcher.hiddenX " y" Switcher.y " w" Switcher.w " h" Switcher.h " NoActivate")
-
-    ; 开启定时器检查鼠标
-    SetTimer(CheckMouse, 30)
-}
-
-; ==============================
-; 滑入动画
-; ==============================
-SlideIn() {
-    global Switcher
-
-    if (Switcher["visible"] || Switcher.sliding)
-        return
-
-    Switcher.sliding := true
-    Switcher.gui.Show("NoActivate")
-    ;~ Switcher.gui.Show()
-
-    x := Switcher.hiddenX
-    while (x < Switcher.showX) {
-        x += 20
-        if (x > Switcher.showX)
-            x := Switcher.showX
-        Switcher.gui.Move(x, Switcher.y)
-        Sleep 10
-    }
-
-    Switcher["visible"] := true
-    Switcher.sliding := false
-
-    ; 初始化 lastHover 防止立即滑出
-    Switcher.lastHover := A_TickCount
-
-    ; 动画结束后确保第一个项目被选中
-    LV := Switcher.LV
-    if LV.GetCount() > 0 {
-        LV.Modify(1, "Select")
-        LV.Focus()
-        LV.Modify(1, "Focus")
-
-        ;~ hwnd := LV.Hwnd
-        ;~ x1 := 0, y1 := 0, w := 0, h := 0
-        ;~ LV_GetItemRect(hwnd, 1, &x1, &y1, &w, &h)
-
-        ;~ mouseX := Switcher.gui.X + x1 + w // 2
-        ;~ mouseY := Switcher.gui.Y + y1 + h // 2
-
-        ;~ MouseMove(mouseX, mouseY, 0)
-    }
-}
-
-; ==============================
-; 滑出动画
-; ==============================
-SlideOut() {
-    global Switcher
-
-    if (!Switcher["visible"] || Switcher.sliding)
-        return
-
-    Switcher.sliding := true
-
-    x := Switcher.showX
-    while (x > Switcher.hiddenX) {
-        x -= 20
-        if (x < Switcher.hiddenX)
-            x := Switcher.hiddenX
-        Switcher.gui.Move(x, Switcher.y)
-        Sleep 10
-    }
-
-    Switcher.gui.Hide()
-    Switcher["visible"] := false
-    Switcher.sliding := false
-}
-
-; ==============================
-; 检查鼠标位置，决定滑入/滑出
-; ==============================
-CheckMouse() {
-    global Switcher
-
-    static EDGE_TRIGGER := 3          ; 离屏幕左侧 px
-    static EDGE_HOLD_TIME := 200      ; 停留 ms 才算有意图
-    static GUI_HOVER_PAD := 10
-    static HIDE_DELAY := 500
-
-    static edgeEnterTime := 0
-
-    ; 坐标模式：屏幕绝对坐标
-    CoordMode("Mouse", "Screen")
-    MouseGetPos &mx, &my
-    now := A_TickCount
-
-    ; ==============================
-    ; ① GUI 未显示：靠近屏幕左侧才滑入
-    ; ==============================
-    if (!Switcher["visible"] && !Switcher.sliding) {
-
-        if (mx <= EDGE_TRIGGER) {
-            if (edgeEnterTime = 0)
-                edgeEnterTime := now
-
-            if (now - edgeEnterTime >= EDGE_HOLD_TIME) {
-                SlideIn()
-                edgeEnterTime := 0
-            }
-        } else {
-            edgeEnterTime := 0
-        }
-        return
-    }
-
-    ; ==============================
-    ; ② GUI 已显示：鼠标在 GUI 内 → 永不隐藏
-    ; ==============================
-    if (Switcher["visible"] && !Switcher.sliding) {
-
-        ; 获取 GUI 坐标和尺寸
-        Switcher.gui.GetPos(&x, &y, &w, &h)
-        ;~ ToolTip("x" X . "y" Y . "Width " Width . "Height" Height)
-        ; 判断鼠标是否在 GUI 内
-        if (mx >= x - GUI_HOVER_PAD
-            && mx <= x + w + GUI_HOVER_PAD
-            && my >= y - GUI_HOVER_PAD
-            && my <= y + h + GUI_HOVER_PAD) {
-
-                Switcher.lastHover := now
-                return
-            }
-
-            ; ==============================
-            ; ③ GUI 离开延迟隐藏
-            ; ==============================
-            if (now - Switcher.lastHover > HIDE_DELAY) {
-                SlideOut()
-            }
-    }
-}
-
-CloseSwitcher() {
-    global Switcher
-    if (!Switcher.Has("initialized")) {
-        return
-    }
-    ; 隐藏 GUI
-    ;~ Switcher.gui.Hide()
-    Switcher.gui.Destroy()
-
-    ;~ Loop Switcher["winListLength"] {
-        ;~ if (A_Index > 9)
-            ;~ break
-        ;~ Hotkey("~" . A_Index, "Off")
-    ;~ }
-    ;~ 清空map
-    Switcher.Clear()
-
-    ; 停掉鼠标监听定时器
-    SetTimer(CheckMouse, 0)
-    ; 显示提示
-    ToolTip("已关闭窗口选择器")
-
-    ; 1 秒后自动消失
-    SetTimer(() => ToolTip(), -1000)  ; -1000 表示一次性计时器
-}
-;~ #6::
-;~ {
-;~ ; Paste a command into cmd.exe without activating the window.
-;~ A_Clipboard := "echo Hello, world!`r"
-;~ MenuSelect "ahk_exe WeChatAppEx.exe",,  "3&", "1&"
-;~ }
-
-
+; 打开微软应用商店
 ^#s::
 {
 	ahk_exe := "ApplicationFrameHost.exe"
@@ -2569,54 +2199,3 @@ GetUrlByRightClick(uiElement) {
     return "未获取到链接"
 }
 
-; 用 Bandizip 解压选中压缩文件的公共函数
-; targetMode: "here" = 解压到当前目录，"folder" = 解压到同名文件夹
-ExtractWithBandizip(targetMode) {
-    BandizipPath := "C:\Program Files\Bandizip\Bandizip.exe"
-    if !FileExist(BandizipPath) {
-        ToolTip("未找到 Bandizip: " BandizipPath)
-        SetTimer(() => ToolTip(), -2000)
-        return
-    }
-
-    ; 备份剪贴板
-    backup := ClipboardAll()
-    A_Clipboard := ""
-
-    ; 复制选中文件路径
-    SendEvent "{Ctrl Down}{Insert}{Ctrl Up}"
-    if !ClipWait(1) {
-        A_Clipboard := backup
-        ToolTip("未选中文件或复制失败")
-        SetTimer(() => ToolTip(), -2000)
-        return
-    }
-
-    selectedFile := Trim(A_Clipboard, " `t`r`n")
-    A_Clipboard := backup
-
-    ; 根据模式决定解压目标路径
-    SplitPath(selectedFile, , &parentDir, , &nameNoExt)
-    targetDir := (targetMode = "folder") ? parentDir "\" nameNoExt : parentDir
-
-    ; Bandizip x: 解压文件，-aoa 覆盖已有文件，-y 自动关闭
-    cmd := Format('"{1}" x -aoa -y "{2}" "{3}"', BandizipPath, selectedFile, targetDir)
-    Run(cmd, , "Hide")
-}
-
-#HotIf WinActive("ahk_class CabinetWClass")
-; Alt+E 解压到当前目录
-!e::ExtractWithBandizip("here")
-; Ctrl+Alt+E 解压到同名文件夹
-^!e::ExtractWithBandizip("folder")
-#HotIf
-
-
-; ^!+1 执行git commit,实现在不同开发工具中触发不同的快捷键（Code.exe 触发 Alt+9，idea64.exe 触发 Ctrl+K）              
-#HotIf WinActive("ahk_exe Code.exe") || WinActive("ahk_exe Qoder.exe")
-    ^!+1::Send "!9"
-#HotIf
-
-#HotIf WinActive("ahk_exe idea64.exe")
-    ^!+1::Send "^k"
-#HotIf

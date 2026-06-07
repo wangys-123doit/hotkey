@@ -1,3 +1,9 @@
+/* OpenControllerFromNetwork.ahk
+1、!u触发让chrome从网络打开idea controller的工具
+2、!+o或!+q热键触发，在source页签下的代码文件，在对应的VSCode或Qoder中打开相应文件以及行数列数
+3、SC137、RCtrl Up热键触发打开Chrome以debug port和自定义debug配置文件的方式
+4、!q热键触发打开Chrome以debug port和自定义debug配置文件的方式
+ */
 
 ;~ 1、配置区
 global PERF_LOG_ENABLED := true
@@ -69,25 +75,25 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
     ; }
 	
 	
-	; 通过 CDP 协议在已启动的调试 Chrome（默认已用 DebugProfile + 9223 端口）中另起标签页执行
-	; 前提：调试 Chrome 已经通过 PrtSc/RCtrl 启动，调试端口 9223 已可用
-	; 使用 127.0.0.1（Chrome 只监听 IPv4，localhost 可能被解析为 IPv6 ::1）
+	; 通过 CDP 协议在【当前虚拟桌面】的调试 Chrome 中另起标签页执行
+	; 使用当前桌面对应的调试端口（桌面1:9223，桌面2:9224...）
 	{
+		cfg := GetDesktopDebugConfig()
 		url := "chrome-extension://ldlghkoiihaelfnggonhjnfiabmaficg/popup.html?props=false"
 		try {
 			http := ComObject("WinHttp.WinHttpRequest.5.1")
 			http.SetTimeouts(3000, 3000, 3000, 3000)
-			http.Open("PUT", "http://127.0.0.1:9223/json/new?" url, false)
+			http.Open("PUT", "http://127.0.0.1:" cfg.port "/json/new?" url, false)
 			http.Send()
 			if (http.Status != 200) {
 				; 某些 Chrome 版本 POST 才能 /json/new，回退到 POST
 				http := ComObject("WinHttp.WinHttpRequest.5.1")
 				http.SetTimeouts(3000, 3000, 3000, 3000)
-				http.Open("POST", "http://127.0.0.1:9223/json/new?" url, false)
+				http.Open("POST", "http://127.0.0.1:" cfg.port "/json/new?" url, false)
 				http.Send()
 			}
 		} catch Error as e {
-			ToolTip("CDP 打开标签页失败（请确认调试 Chrome 已启动）：`n" e.Message)
+			ToolTip("CDP 打开标签页失败（桌面" cfg.desktopIndex " 端口" cfg.port "）：`n" e.Message)
 			SetTimer(() => ToolTip(), -3000)
 		}
 	}
@@ -98,11 +104,117 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
 ; 仅在非 RDP 场景下允许触发，避免连接/切换 RDP 时误发 Win 键
 ; #HotIf !IsRdpContext()
 SC137::
+^!+2::
 RCtrl Up:: {
-    if WinExist("ahk_exe chrome.exe") && IsChromeDebugPortReady(9223) {
-        SendEvent "{LWin Down}2{LWin Up}"
+    chromeHwnd := GetChromeHwndOnCurrentDesktop()
+    cfg := GetDesktopDebugConfig()
+    if chromeHwnd && IsChromeDebugPortReady(cfg.port) {
+        if WinActive("ahk_id " chromeHwnd) {
+            WinMinimize("ahk_id " chromeHwnd)
+        } else {
+            WinActivate("ahk_id " chromeHwnd)
+        }
     } else {
         LaunchChromeWithDebugPort()
+    }
+}
+
+; 获取当前虚拟桌面的 Chrome 窗口句柄
+; Windows 10/11 将不在当前桌面的窗口标记为 cloaked（隐藏），通过 DwmGetWindowAttribute 检测
+; DWMWA_CLOAKED = 14，输出值为 BOOL（4 字节 int），非 0 表示窗口被隐藏（不在当前桌面）
+; 返回：hwnd（找到）或 0（未找到）
+GetChromeHwndOnCurrentDesktop() {
+    chromeList := WinGetList("ahk_exe chrome.exe")
+    log := "GetChromeHwndOnCurrentDesktop`nChrome 窗口总数: " chromeList.Length "`n"
+    for hwnd in chromeList {
+        buf := Buffer(4, 0)
+        hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
+        cloaked := NumGet(buf, 0, "Int")
+        title := ""
+        try title := WinGetTitle("ahk_id " hwnd)
+        log .= "hwnd=" hwnd " hr=" hr " cloaked=" cloaked " title=" SubStr(title, 1, 30) "`n"
+        if (hr = 0 && !cloaked) {
+            log .= "→ 找到当前桌面的 Chrome 窗口: " hwnd
+            ToolTip(log)
+            SetTimer () => ToolTip(), -3000
+            return hwnd
+        }
+    }
+    log .= "→ 当前桌面无 Chrome 窗口"
+    ToolTip(log)
+    SetTimer () => ToolTip(), -3000
+    return 0
+}
+
+; 获取当前虚拟桌面的 ID（GUID 字符串）
+; 通过 ImmersiveShell COM 接口的 IVirtualDesktopManager.GetWindowDesktopId 从当前桌面窗口反查
+; 如果当前桌面没有任何窗口，回退到通过焦点窗口查询
+GetCurrentVirtualDesktopId() {
+    ; 优先用当前桌面的 Chrome 窗口（它肯定在当前桌面）
+    chromeHwnd := GetChromeHwndOnCurrentDesktop()
+    if chromeHwnd {
+        id := GetWindowDesktopId(chromeHwnd)
+        if id
+            return id
+    }
+    ; 回退：用当前焦点窗口
+    focusHwnd := WinExist("A")
+    if focusHwnd {
+        id := GetWindowDesktopId(focusHwnd)
+        if id
+            return id
+    }
+    return ""
+}
+
+; 通过 IVirtualDesktopManager COM 接口获取窗口所属虚拟桌面 ID
+GetWindowDesktopId(hwnd) {
+    if !hwnd
+        return ""
+    try {
+        vdm := ComObject("{AA509086-5CA9-4C25-8F95-589D3C07B48A}", "{F3163840-895E-45CF-8C8B-37F5E93E22FC}")
+        ; IVirtualDesktopManager.GetWindowDesktopId(hwnd, &desktopId)
+        desktopId := Buffer(16)
+        ComCall(5, vdm, "Ptr", hwnd, "Ptr", desktopId)
+        ; GUID → 字符串
+        buf := Buffer(39 * 2)
+        DllCall("ole32\StringFromGUID2", "Ptr", desktopId, "Ptr", buf, "Int", 39)
+        return StrGet(buf, "UTF-16")
+    } catch {
+        return ""
+    }
+}
+
+; 根据当前虚拟桌面确定调试 Chrome 的 profile 目录和端口
+; 目录统一放在 E:\chrome_profiles 以减少 C 盘 IO 负载
+; 桌面 1 → E:\chrome_profiles\desktop1:9223
+; 桌面 2 → E:\chrome_profiles\desktop2:9224
+; 桌面 N → E:\chrome_profiles\desktopN:9222+N
+; 识别失败时回退到 desktop1:9223（保证总能启动）
+GetDesktopDebugConfig() {
+    baseDir := "E:\chrome_profiles"
+    basePort := 9222
+    desktopId := GetCurrentVirtualDesktopId()
+    index := 1
+    if desktopId != "" {
+        idx := GetDesktopIndexById(desktopId)
+        if idx > 0
+            index := idx
+    }
+    return { profileDir: baseDir "\desktop" index, port: basePort + index, desktopIndex: index }
+}
+
+; 从注册表中查询桌面 GUID 对应的序号（1-based）
+; 注册表路径：HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops\Desktops\{id}
+; 其中 Index 值为 DWORD
+GetDesktopIndexById(desktopId) {
+    try {
+        ; 桌面 ID 形如 {XXXX-XXXX-...}，注册表子键通常不带花括号
+        cleanId := RegExReplace(desktopId, "^\{|\}$", "")
+        val := RegRead("HKCU", "Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops\Desktops\" cleanId, "Index")
+        return Integer(val) + 1
+    } catch {
+        return 0
     }
 }
 
@@ -135,124 +247,52 @@ GetChromeExePath() {
     return ""
 }
 
-; 收集所有可能的 Chrome 快捷方式位置
-GetChromeShortcutPaths() {
-    paths := []
-    candidates := [
-        A_ProgramsCommon "\Google Chrome.lnk",
-        A_Programs "\Google Chrome.lnk",
-        A_Desktop "\Google Chrome.lnk",
-        A_DesktopCommon "\Google Chrome.lnk",
-        EnvGet("AppData") . "\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Google Chrome.lnk",
-        EnvGet("AppData") . "\Microsoft\Internet Explorer\Quick Launch\Google Chrome.lnk"
-    ]
-    for p in candidates {
-        if FileExist(p)
-            paths.Push(p)
-    }
-    return paths
-}
-
-; 修复单个快捷方式：确保 Arguments 含 --remote-debugging-port=port
-FixChromeShortcutDebugPort(lnkPath, port := 9223) {
-    try {
-        sc := ComObject("WScript.Shell").CreateShortcut(lnkPath)
-        args := sc.Arguments
-        cleaned := Trim(RegExReplace(args, "i)\s*--remote-debugging-port=\d+\s*", " "))
-        sc.Arguments := "--remote-debugging-port=" port (cleaned = "" ? "" : " " cleaned)
-        sc.Save()
-        return ""
-    } catch Error as e {
-        return e.Message
-    }
-}
-
-; 批量修复快捷方式
-FixChromeShortcutsBatch(paths, port := 9223) {
-    fixed := 0
-    failReport := ""
-    for lnkPath in paths {
-        err := FixChromeShortcutDebugPort(lnkPath, port)
-        if err = ""
-            fixed++
-        else
-            failReport .= "❌ " lnkPath "`n    " err "`n"
-    }
-    return [fixed, failReport]
-}
-
-; 验证所有 Chrome 快捷方式是否含有 --remote-debugging-port 参数；发现缺失时弹窗询问是否一键修复
-VerifyChromeShortcutDebugPort(port := 9223) {
-    paths := GetChromeShortcutPaths()
-    if paths.Length = 0 {
-        MsgBox("未找到任何 Chrome 快捷方式", "验证失败", 16)
-        return false
-    }
-    report := ""
-    okCount := 0
-    missingPaths := []
-    for lnkPath in paths {
-        try {
-            sc := ComObject("WScript.Shell").CreateShortcut(lnkPath)
-            args := sc.Arguments
-            hasPort := InStr(args, "--remote-debugging-port=" port)
-            if hasPort {
-                okCount++
-            } else {
-                missingPaths.Push(lnkPath)
-            }
-            report .= (hasPort ? "✅" : "❌") " " lnkPath "`n    Args: " (args = "" ? "(空)" : args) "`n`n"
-        } catch Error as e {
-            report .= "⚠ " lnkPath "`n    读取失败: " e.Message "`n`n"
-        }
-    }
-    summary := "已含调试端口参数: " okCount " / " paths.Length
-    if missingPaths.Length = 0 {
-        MsgBox(report "`n" summary, "快捷方式验证结果", 64)
-        return true
-    }
-    answer := MsgBox(report "`n" summary
-        "`n`n是否一键为以上❌项目补充 --remote-debugging-port=" port " 参数？"
-        "`n注意：修改 C:\Users\Public\Desktop 等公共路径需要脚本以管理员身份运行。",
-        "快捷方式验证结果", "YesNo Icon!")
-    if answer != "Yes"
-        return false
-    result := FixChromeShortcutsBatch(missingPaths, port)
-    msg := "修复完成：" result[1] " / " missingPaths.Length
-    if result[2] != ""
-        msg .= "`n`n失败项（常见原因：需管理员权限）：`n" result[2]
-    MsgBox(msg, "修复结果", result[2] = "" ? 64 : 48)
-    return result[1] > 0
-}
-
 ; 启动 Chrome 并确保调试端口生效。
+; 按虚拟桌面隔离：每个桌面独立的 profile 目录和调试端口，互不影响。
 ; Chrome 136+ 强制要求：--remote-debugging-port 必须配合 --user-data-dir=<非默认目录>
 ; 官方文档：https://developer.chrome.com/blog/remote-debugging-port
-; 因此使用 %LocalAppData%\Google\Chrome\DebugProfile 作为永久调试配置目录（非临时目录，保留会话状态）
 LaunchChromeWithDebugPort() {
-    debugPort := 9223
-    debugProfileDir := EnvGet("LocalAppData") . "\Google\Chrome\DebugProfile"
+    cfg := GetDesktopDebugConfig()
+    debugPort := cfg.port
+    debugProfileDir := cfg.profileDir
+    desktopIndex := cfg.desktopIndex
 
-    ; 1. 调试端口已就绪 → 直接激活窗口
-    if IsChromeDebugPortReady(debugPort) {
-        if WinExist("ahk_exe chrome.exe")
-            WinActivate()
+    ; 1. 调试端口已就绪 且 当前桌面有 Chrome 窗口 → 激活/最小化切换
+    chromeHwnd := GetChromeHwndOnCurrentDesktop()
+    if IsChromeDebugPortReady(debugPort) && chromeHwnd {
+        if WinActive("ahk_id " chromeHwnd) {
+            WinMinimize("ahk_id " chromeHwnd)
+        } else {
+            WinActivate("ahk_id " chromeHwnd)
+        }
         return
     }
 
-    ; 2. 存在任何 chrome.exe 进程但调试端口未启用
-    ;    原因：Chrome 只有第一个进程的命令行参数生效，后续启动会转发给主进程。
-    ;    必须全部 kill 后重启才能启用调试端口。
-    if ProcessExist("chrome.exe") {
-        ToolTip("检测到 Chrome 后台进程未开启调试端口，正在重启...")
-        loop {
-            pid := ProcessExist("chrome.exe")
-            if !pid
-                break
-            ProcessClose(pid)
-            Sleep(150)
+    ; 2. 调试端口未启用：只关闭【当前虚拟桌面】的 chrome.exe 进程，其他桌面的调试 Chrome 保持不动
+    ;    原理：Chrome 单实例锁按 --user-data-dir 隔离，不同目录可以共存
+    currentDesktopId := GetCurrentVirtualDesktopId()
+    killedCount := 0
+    if currentDesktopId != "" && WinExist("ahk_exe chrome.exe") {
+        chromeList := WinGetList("ahk_exe chrome.exe")
+        targetPids := Map()
+        for hwnd in chromeList {
+            dId := GetWindowDesktopId(hwnd)
+            if (dId != "" && dId = currentDesktopId) {
+                try {
+                    pid := WinGetPID("ahk_id " hwnd)
+                    if pid
+                        targetPids[pid] := true
+                }
+            }
         }
-        Sleep(800)
+        if targetPids.Count > 0 {
+            ToolTip("重启当前桌面（" desktopIndex "）的 Chrome 以启用调试端口...")
+            for pid in targetPids {
+                try ProcessClose(pid)
+                killedCount++
+            }
+            Sleep(800)
+        }
     }
 
     ; 3. 确保永久调试配置目录存在
@@ -261,7 +301,7 @@ LaunchChromeWithDebugPort() {
             DirCreate(debugProfileDir)
     } catch Error as e {
         ToolTip()
-        MsgBox("创建调试配置目录失败: " e.Message, "启动失败", 16)
+        MsgBox("创建调试配置目录失败: " e.Message "`n目录: " debugProfileDir, "启动失败", 16)
         return
     }
 
@@ -274,7 +314,7 @@ LaunchChromeWithDebugPort() {
         return
     }
     try {
-        Run(Format('"{1}" --remote-debugging-port={2} --user-data-dir="{3} --variations-override-country=us"'
+        Run(Format('"{1}" --remote-debugging-port={2} --user-data-dir="{3}" --variations-override-country=us'
             , chromeExe, debugPort, debugProfileDir))
     } catch Error as e {
         ToolTip()
@@ -291,11 +331,8 @@ LaunchChromeWithDebugPort() {
         }
     }
     ToolTip()
-    MsgBox("Chrome 已启动但调试端口 " debugPort " 未开启。`n可按 Win+Alt+9 验证快捷方式参数。", "调试端口未开启", 48)
+    MsgBox("桌面 " desktopIndex " Chrome 已启动但调试端口 " debugPort " 未开启。`n`n可能原因：`n1. Chrome 未使用 --remote-debugging-port 参数启动`n2. Chrome 136+ 需要同时指定 --user-data-dir=<非默认目录>", "调试端口未开启", 48)
 }
-
-; 按 Win+Alt+9 手动验证所有 Chrome 快捷方式的调试端口参数
-; #!9::VerifyChromeShortcutDebugPort(9223)
 
 IsRdpContext() {
     ; 远程会话中，或当前焦点在 mstsc 窗口，都视为 RDP 场景
