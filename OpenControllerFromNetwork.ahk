@@ -60,7 +60,7 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
 }
 
 ; Alt+Shift+O: 在当前虚拟桌面的 Qoder/VS Code 中打开 DevTools Source 文件并定位到行号列号
-!+o:: {
+/* !+o:: {
     ; 1. 通过 Bridge 获取行号、列号和文件 URL
     if !EnsureBridgeRunning() {
         ToolTip("Bridge 未启动")
@@ -105,7 +105,7 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
     } else {
         OpenInEditor(filePath)
     }
-}
+} */
 
 
 ; 当按下 Alt+Q 时，手动检测弹窗，若失败则强行唤醒 URL
@@ -173,6 +173,15 @@ RCtrl Up:: {
 ; 返回：hwnd（找到）或 0（未找到）
 GetChromeHwndOnCurrentDesktop() {
     chromeList := WinGetList("ahk_exe chrome.exe")
+
+    ; 构建PWA进程PID集合，用于排除PWA窗口（--app= 启动的Chrome实例）
+    pwaPids := Map()
+    try {
+        wmi := ComObject("WbemScripting.SWbemLocator").ConnectServer(".", "root\cimv2")
+        for proc in wmi.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE Name='chrome.exe' AND CommandLine LIKE '%--app=%'")
+            pwaPids[proc.ProcessId] := true
+    }
+
     log := "GetChromeHwndOnCurrentDesktop`nChrome 窗口总数: " chromeList.Length "`n"
     for hwnd in chromeList {
         buf := Buffer(4, 0)
@@ -180,8 +189,11 @@ GetChromeHwndOnCurrentDesktop() {
         cloaked := NumGet(buf, 0, "Int")
         title := ""
         try title := WinGetTitle("ahk_id " hwnd)
-        log .= "hwnd=" hwnd " hr=" hr " cloaked=" cloaked " title=" SubStr(title, 1, 30) "`n"
-        if (hr = 0 && !cloaked) {
+        pid := 0
+        try pid := WinGetPID("ahk_id " hwnd)
+        isPwa := pwaPids.Has(pid)
+        log .= "hwnd=" hwnd " hr=" hr " cloaked=" cloaked " pid=" pid " pwa=" isPwa " title=" SubStr(title, 1, 30) "`n"
+        if (hr = 0 && !cloaked && !isPwa) {
             log .= "→ 找到当前桌面的 Chrome 窗口: " hwnd
             ToolTip(log)
             SetTimer () => ToolTip(), -3000
