@@ -395,8 +395,42 @@ CapsLock::
     }
 }
 
+; ^!+3: IBeam直接复制，非IBeam检测选中文本→有则复制，无则Alt+Left后退
+#HotIf WinActive("ahk_exe chrome.exe")
+^!+3:: {
+    if A_Cursor = "IBeam" {
+        Send "{Ctrl Down}{c}{Ctrl Up}"
+    } else {
+        savedClip := ClipboardAll()
+        A_Clipboard := ""
+        Send "{Ctrl Down}{c}{Ctrl Up}"
+        if ClipWait(0.3) {
+            ; 有选中文本，Ctrl+C已复制成功
+        } else {
+            A_Clipboard := savedClip
+            Send "!{Left}"
+        }
+    }
+}
+^!+4:: {
+    if A_Cursor = "IBeam" {
+        Send "{Ctrl Down}{v}{Ctrl Up}"
+    } else {
+        savedClip := ClipboardAll()
+        A_Clipboard := ""
+        Send "{Ctrl Down}{c}{Ctrl Up}"
+        if ClipWait(0.3) {
+            A_Clipboard := savedClip
+            Send "{Ctrl Down}{v}{Ctrl Up}"
+        } else {
+            A_Clipboard := savedClip
+            Send "!{Right}"
+        }
+    }
+}
+#HotIf
 ; ^!+3: 文本光标执行复制，箭头光标发送 Alt+Left（后退）
-#HotIf WinActive("ahk_exe chrome.exe") || WinActive("ahk_class CabinetWClass")
+#HotIf WinActive("ahk_class CabinetWClass")
 ^!+3:: {
     if A_Cursor = "IBeam" {
         ; 文本光标，执行复制

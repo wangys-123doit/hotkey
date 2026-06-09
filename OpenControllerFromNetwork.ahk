@@ -155,7 +155,7 @@ SC137::
 ^!+2::
 RCtrl Up:: {
     chromeHwnd := GetChromeHwndOnCurrentDesktop()
-    cfg := GetDesktopDebugConfig()
+    cfg := GetDesktopDebugConfig(chromeHwnd)  ; 传入已找到的hwnd，避免重复WMI搜索
     if chromeHwnd && IsChromeDebugPortReady(cfg.port) {
         if WinActive("ahk_id " chromeHwnd) {
             WinMinimize("ahk_id " chromeHwnd)
@@ -167,11 +167,28 @@ RCtrl Up:: {
     }
 }
 
+; 全局缓存：当前桌面的 Chrome 窗口句柄（热键快速路径，避免每次全量搜索）
+global g_cachedChromeHwnd := 0
+; 全局缓存：调试端口状态 [ready, tick]（避免每次 HTTP 请求）
+global g_debugPortCache := Map()
+
 ; 获取当前虚拟桌面的 Chrome 窗口句柄
 ; Windows 10/11 将不在当前桌面的窗口标记为 cloaked（隐藏），通过 DwmGetWindowAttribute 检测
 ; DWMWA_CLOAKED = 14，输出值为 BOOL（4 字节 int），非 0 表示窗口被隐藏（不在当前桌面）
 ; 返回：hwnd（找到）或 0（未找到）
+; ★ 优化：缓存 hwnd，快速路径仅验证窗口存在+未cloaked（<1ms），慢路径才走WMI
 GetChromeHwndOnCurrentDesktop() {
+    global g_cachedChromeHwnd
+    ; ★ 快速路径：验证缓存（WinExist + DllCall，<1ms）
+    if g_cachedChromeHwnd && WinExist("ahk_id " g_cachedChromeHwnd) {
+        buf := Buffer(4, 0)
+        hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", g_cachedChromeHwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
+        if (hr = 0 && !NumGet(buf, 0, "Int"))
+            return g_cachedChromeHwnd
+    }
+    g_cachedChromeHwnd := 0
+
+    ; 慢路径：完整搜索（缓存未命中时才执行）
     chromeList := WinGetList("ahk_exe chrome.exe")
 
     ; 构建PWA进程PID集合，用于排除PWA窗口（--app= 启动的Chrome实例）
@@ -182,7 +199,7 @@ GetChromeHwndOnCurrentDesktop() {
             pwaPids[proc.ProcessId] := true
     }
 
-    log := "GetChromeHwndOnCurrentDesktop`nChrome 窗口总数: " chromeList.Length "`n"
+    log := "GetChromeHwndOnCurrentDesktop (full search)`nChrome 窗口总数: " chromeList.Length "`n"
     for hwnd in chromeList {
         buf := Buffer(4, 0)
         hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
@@ -192,9 +209,10 @@ GetChromeHwndOnCurrentDesktop() {
         pid := 0
         try pid := WinGetPID("ahk_id " hwnd)
         isPwa := pwaPids.Has(pid)
-        log .= "hwnd=" hwnd " hr=" hr " cloaked=" cloaked " pid=" pid " pwa=" isPwa " title=" SubStr(title, 1, 30) "`n"
+        log .= "hwnd=" hwnd " cloaked=" cloaked " pwa=" isPwa " title=" SubStr(title, 1, 30) "`n"
         if (hr = 0 && !cloaked && !isPwa) {
-            log .= "→ 找到当前桌面的 Chrome 窗口: " hwnd
+            g_cachedChromeHwnd := hwnd
+            log .= "→ 找到: " hwnd
             ToolTip(log)
             SetTimer () => ToolTip(), -3000
             return hwnd
@@ -209,8 +227,15 @@ GetChromeHwndOnCurrentDesktop() {
 ; 获取当前虚拟桌面的 ID（GUID 字符串）
 ; 通过 ImmersiveShell COM 接口的 IVirtualDesktopManager.GetWindowDesktopId 从当前桌面窗口反查
 ; 如果当前桌面没有任何窗口，回退到通过焦点窗口查询
-GetCurrentVirtualDesktopId() {
-    ; 优先用当前桌面的 Chrome 窗口（它肯定在当前桌面）
+; ★ 优化：接受可选 chromeHwnd 参数，避免重复调用 GetChromeHwndOnCurrentDesktop
+GetCurrentVirtualDesktopId(chromeHwnd := 0) {
+    ; 优先用传入的 Chrome 窗口（调用方已找到，无需重复搜索）
+    if chromeHwnd {
+        id := GetWindowDesktopId(chromeHwnd)
+        if id
+            return id
+    }
+    ; 回退：用当前桌面的 Chrome 窗口
     chromeHwnd := GetChromeHwndOnCurrentDesktop()
     if chromeHwnd {
         id := GetWindowDesktopId(chromeHwnd)
@@ -251,10 +276,11 @@ GetWindowDesktopId(hwnd) {
 ; 桌面 2 → E:\chrome_profiles\desktop2:9224
 ; 桌面 N → E:\chrome_profiles\desktopN:9222+N
 ; 识别失败时回退到 desktop1:9223（保证总能启动）
-GetDesktopDebugConfig() {
+; ★ 优化：接受可选 chromeHwnd 参数，透传给 GetCurrentVirtualDesktopId 避免重复搜索
+GetDesktopDebugConfig(chromeHwnd := 0) {
     baseDir := "E:\chrome_profiles"
     basePort := 9222
-    desktopId := GetCurrentVirtualDesktopId()
+    desktopId := GetCurrentVirtualDesktopId(chromeHwnd)
     index := 1
     if desktopId != "" {
         idx := GetDesktopIndexById(desktopId)
@@ -281,16 +307,28 @@ GetDesktopIndexById(desktopId) {
 ; ==========================================================
 ; 检测 Chrome 调试端口是否已开启
 ; 关键：必须用 127.0.0.1（Chrome 只监听 IPv4，localhost 可能被解析为 IPv6 ::1 导致失败）
+; ★ 优化：缓存端口状态 5 秒，避免每次热键都创建 COM + HTTP 请求
 IsChromeDebugPortReady(port) {
+    global g_debugPortCache
+    now := A_TickCount
+    if g_debugPortCache.Has(port) {
+        cached := g_debugPortCache[port]
+        if (now - cached[2] < 5000)  ; 5秒缓存
+            return cached[1]
+    }
+
+    ready := false
     try {
         http := ComObject("WinHttp.WinHttpRequest.5.1")
         http.SetTimeouts(500, 500, 500, 500)
         http.Open("GET", "http://127.0.0.1:" port "/json/version", false)
         http.Send()
-        return (http.Status = 200)
+        ready := (http.Status = 200)
     } catch {
-        return false
     }
+
+    g_debugPortCache[port] := [ready, now]
+    return ready
 }
 
 ; 定位 chrome.exe 的真实路径（避开任何快捷方式）
@@ -330,7 +368,7 @@ LaunchChromeWithDebugPort() {
 
     ; 2. 调试端口未启用：只关闭【当前虚拟桌面】的 chrome.exe 进程，其他桌面的调试 Chrome 保持不动
     ;    原理：Chrome 单实例锁按 --user-data-dir 隔离，不同目录可以共存
-    currentDesktopId := GetCurrentVirtualDesktopId()
+    currentDesktopId := GetCurrentVirtualDesktopId(chromeHwnd)
     killedCount := 0
     if currentDesktopId != "" && WinExist("ahk_exe chrome.exe") {
         chromeList := WinGetList("ahk_exe chrome.exe")
@@ -374,8 +412,10 @@ LaunchChromeWithDebugPort() {
         return
     }
     try {
-        Run(Format('"{1}" --remote-debugging-port={2} --user-data-dir="{3}" --disable-infobars --variations-override-country=us'
-            , chromeExe, debugPort, debugProfileDir))
+        ; 加载 DevTools VSCode Opener 扩展，确保每个桌面 Chrome 实例都有打开文件功能
+        extensionPath := A_ScriptDir "\devtools-vscode-opener"
+        Run(Format('"{1}" --remote-debugging-port={2} --user-data-dir="{3}" --load-extension="{4}" --disable-infobars --variations-override-country=us'
+            , chromeExe, debugPort, debugProfileDir, extensionPath))
     } catch Error as e {
         ToolTip()
         MsgBox("启动 Chrome 失败: " e.Message, "启动失败", 16)

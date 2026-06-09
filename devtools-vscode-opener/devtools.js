@@ -104,9 +104,20 @@ async function fetchLineColFromBridge() {
     const json = await r.json();
     const line = Number(json?.lineNumber ?? json?.line ?? json?.data?.lineNumber);
     const col = Number(json?.columnNumber ?? json?.column ?? json?.col ?? json?.data?.columnNumber);
+    // 也提取 fileUrl，作为绝对路径的可靠来源
+    let filePath = '';
+    const rawUrl = json?.fileUrl || json?.data?.fileUrl || '';
+    if (rawUrl && rawUrl.startsWith('file://')) {
+      try {
+        let p = decodeSafe(new URL(rawUrl).pathname || '');
+        if (/^[/][A-Za-z]:[/]/.test(p)) p = p.slice(1);
+        filePath = p.replace(/\\/g, '/');
+      } catch {}
+    }
     return {
       line: Number.isFinite(line) && line >= 1 ? line : null,
-      col: Number.isFinite(col) && col >= 1 ? col : null
+      col: Number.isFinite(col) && col >= 1 ? col : null,
+      filePath: filePath || null
     };
   } catch { return null; }
 }
@@ -114,13 +125,15 @@ async function fetchLineColFromBridge() {
 // ─── Open in IDE ────────────────────────────────────────────────
 
 async function openInIde(resource, target) {
-  const openPath = toOpenPath(resource.url);
-  if (!openPath) return;
+  const fallbackPath = toOpenPath(resource.url);
 
-  // 优先从 AHK Bridge 获取精确光标位置（CDP 直连 DevTools 内部）
+  // 优先从 AHK Bridge 获取精确光标位置和文件绝对路径（CDP 直连 DevTools 内部）
   const bridge = await fetchLineColFromBridge();
   const line = bridge?.line || state.lastLine || 1;
   const col = bridge?.col || state.lastCol || 1;
+  // 优先使用 bridge 返回的绝对路径，避免相对路径 BFS 匹配到错误项目
+  const openPath = bridge?.filePath || fallbackPath;
+  if (!openPath) return;
 
   const action = target === 'qoder' ? 'OPEN_QODER' : 'OPEN_VSCODE';
   console.log('[IDE-Opener]', action, openPath, `L${line}:${col}`, bridge ? '(bridge)' : '(state)');

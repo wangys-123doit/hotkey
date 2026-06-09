@@ -1,0 +1,35 @@
+﻿=== 开始查询 Qoder 窗口 ===
+当前桌面 ID: (获取失败)
+========================================
+=== Qoder 窗口列表 ===
+检测方法: DWMWA_CLOAKED (非cloaked = 当前桌面)
+========================================
+Qoder.exe 窗口数: 3
+Code.exe 窗口数: 0
+========================================
+✓ 当前桌面 
+  exe:     Qoder.exe
+  hwnd:    5841358
+  pid:     16220
+  title:   host.js - hotkey - Qoder
+  desktop: (COM不可用)
+  cloaked: 0
+----------------------------------------
+✓ 当前桌面 
+  exe:     Qoder.exe
+  hwnd:    66592596
+  pid:     16220
+  title:   index.vue - yudao-ui-admin-vue3 (工作区) - Qoder
+  desktop: (COM不可用)
+  cloaked: 0
+----------------------------------------
+✓ 当前桌面 
+  exe:     Qoder.exe
+  hwnd:    19732202
+  pid:     16220
+  title:   index.vue - jd-tduck-x-front (工作区) - Qoder
+  desktop: (COM不可用)
+  cloaked: 0
+----------------------------------------
+
+总计: 3 个窗口，当前桌面: 3 个

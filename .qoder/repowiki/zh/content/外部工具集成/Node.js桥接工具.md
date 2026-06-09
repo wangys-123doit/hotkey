@@ -17,8 +17,8 @@
 
 ## 更新摘要
 **变更内容**
-- 增强AutoHotkey DevTools桥接(get_line_number.ahk)提供行号解析和诊断功能
-- 改善源码面板导航体验的行号获取机制
+- 增强AutoHotkey DevTools桥接(get_line_number.ahk)提供多字段行号解析和诊断功能
+- 改进源码面板导航体验的行号获取机制，新增列号和文件URL支持
 - 新增智能端口探测和健康检查功能
 - 增强错误处理和超时机制
 - 完善UIA菜单交互功能
@@ -37,15 +37,16 @@
 
 ## 简介
 
-Node.js桥接工具是一个基于AutoHotkey v2和Node.js的跨平台开发辅助工具，专门用于从Chrome DevTools源码面板获取当前编辑器的行号信息。该工具通过Chrome远程接口(chrome-remote-interface)实现与Chrome DevTools的深度集成，为开发者提供了一个便捷的方式来获取源码面板中的当前行号。
+Node.js桥接工具是一个基于AutoHotkey v2和Node.js的跨平台开发辅助工具，专门用于从Chrome DevTools源码面板获取当前编辑器的行号信息。该工具通过Chrome远程接口(chrome-remote-interface)实现与Chrome DevTools的深度集成，为开发者提供了一个便捷的方式来获取源码面板中的当前行号、列号和文件URL信息。
 
 该系统的核心价值在于：
 - **无缝集成**：通过HTTP API提供统一的接口，支持多种编程语言调用
-- **实时同步**：直接从DevTools内部上下文获取最新行号信息
-- **自动化支持**：可作为AutoHotkey热键绑定的一部分，实现一键获取行号
+- **实时同步**：直接从DevTools内部上下文获取最新行号、列号和文件URL信息
+- **自动化支持**：可作为AutoHotkey热键绑定的一部分，实现一键获取多维代码位置信息
 - **跨平台兼容**：支持Windows平台下的各种浏览器和开发环境
 - **智能健康检查**：内置端口探测和进程状态监控功能
 - **增强诊断功能**：提供完整的系统链路状态检查和故障排除工具
+- **多字段返回值**：支持同时获取行号、列号和文件URL的完整代码位置信息
 
 ## 项目结构
 
@@ -84,8 +85,8 @@ UIA --> UIABrowser
 ```
 
 **图表来源**
-- [bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
-- [get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
+- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
 
 **章节来源**
@@ -104,6 +105,7 @@ Node.js桥接服务是整个系统的核心组件，负责与Chrome DevTools进�
 4. **HTTP服务暴露**：提供RESTful API接口供外部调用
 5. **端口探测和健康检查**：内置智能的端口占用检测和进程状态监控
 6. **错误处理和恢复**：提供多层次的错误处理和自动恢复机制
+7. **多字段数据提取**：从DevTools内部获取行号、列号和文件URL信息
 
 ### AutoHotkey控制脚本 (get_line_number.ahk)
 
@@ -111,10 +113,11 @@ AutoHotkey脚本提供了用户友好的交互界面和自动化功能：
 
 1. **环境初始化**：自动检测和启动Chrome调试模式
 2. **服务管理**：监控和管理Node.js桥接服务的状态
-3. **热键绑定**：提供快捷键操作，支持一键获取行号
+3. **热键绑定**：提供快捷键操作，支持一键获取多字段代码位置信息
 4. **诊断工具**：内置完整的系统健康检查功能
-5. **智能行号解析**：提供正则表达式解析和错误处理
+5. **智能多字段解析**：提供正则表达式解析和错误处理，支持行号、列号和文件URL
 6. **超时和重试机制**：实现智能的超时处理和自动重试
+7. **增强的错误状态**：支持"Bridge Offline"、"Not in Source Panel"等详细错误状态
 
 ### VBS启动器 (run_bridge.vbs)
 
@@ -129,8 +132,8 @@ AutoHotkey脚本提供了用户友好的交互界面和自动化功能：
 - 增强的菜单交互和导航能力
 
 **章节来源**
-- [bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
-- [get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
+- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)
 
@@ -156,7 +159,7 @@ subgraph "桥接层"
 CDPServer[Chrome DevTools服务]
 JSEvaluator[JavaScript执行器]
 TargetFinder[目标发现器]
-LineParser[行号解析器]
+MultiFieldParser[多字段解析器]
 end
 subgraph "底层基础设施"
 Chrome[Chrome浏览器]
@@ -178,7 +181,7 @@ JSEvaluator --> TargetFinder
 TargetFinder --> Chrome
 AHKService --> NodeJS
 NodeJS --> FileSystem
-LineParser --> AHKService
+MultiFieldParser --> AHKService
 Diagnostic --> AHKService
 style AHK fill:#e1f5fe
 style HTTPServer fill:#f3e5f5
@@ -211,6 +214,7 @@ style HealthChecker fill:#fff3e0
 - DevTools内部API的调用
 - DOM元素状态的查询
 - 数据结果的提取和转换
+- **新增**：文件URL的获取和解析
 
 ### JavaScript桥接机制
 
@@ -224,22 +228,22 @@ participant HTTP as HTTP服务器
 participant Node as Node.js服务
 participant CDP as Chrome DevTools
 participant JS as JavaScript执行器
-User->>AHK : 触发获取行号热键
+User->>AHK : 触发获取代码位置热键
 AHK->>HTTP : 发送HTTP请求
 HTTP->>Node : 转发请求
 Node->>CDP : 连接DevTools实例
-CDP->>JS : 执行行号获取代码
-JS->>CDP : 查询编辑器状态
-CDP-->>JS : 返回行号数据
+CDP->>JS : 执行多字段获取代码
+JS->>CDP : 查询编辑器状态和文件URL
+CDP-->>JS : 返回行号、列号、文件URL数据
 JS-->>Node : 返回执行结果
 Node-->>HTTP : 返回JSON响应
-HTTP-->>AHK : 返回行号信息
-AHK-->>User : 显示行号结果
+HTTP-->>AHK : 返回多字段位置信息
+AHK-->>User : 显示完整代码位置结果
 ```
 
 **图表来源**
-- [bridge.js:11-65](file://get-source-panel-line-number/bridge.js#L11-L65)
-- [get_line_number.ahk:71-86](file://get-source-panel-line-number/get_line_number.ahk#L71-L86)
+- [bridge.js:11-84](file://get-source-panel-line-number/bridge.js#L11-L84)
+- [get_line_number.ahk:71-97](file://get-source-panel-line-number/get_line_number.ahk#L71-L97)
 
 ### 数据交换格式
 
@@ -249,8 +253,10 @@ AHK-->>User : 显示行号结果
 HTTP GET请求到`/line-number`端点，无需额外的请求头或参数。
 
 #### 响应格式
-标准的JSON响应包含以下字段：
+**更新**：标准的JSON响应现在包含以下字段：
 - `lineNumber`: 当前源码面板的行号（数字类型）
+- `columnNumber`: 当前行号对应的列号（数字类型）
+- `fileUrl`: 当前编辑文件的完整URL（字符串类型）
 - `error`: 错误信息（字符串类型，仅在发生错误时存在）
 
 #### 错误处理策略
@@ -258,6 +264,7 @@ HTTP GET请求到`/line-number`端点，无需额外的请求头或参数。
 - DevTools未找到：返回明确的错误信息
 - JavaScript执行失败：捕获并返回异常详情
 - 网络连接问题：提供超时和连接失败的反馈
+- **新增**：多字段解析失败的详细错误状态
 
 ### 端口探测和健康检查功能
 
@@ -303,31 +310,36 @@ AutoHotkey与Node.js之间的通信基于标准的HTTP协议，具有以下特�
 1. **请求阶段**：AutoHotkey发起HTTP GET请求
 2. **处理阶段**：Node.js服务接收并处理请求
 3. **响应阶段**：Node.js返回JSON格式的响应
-4. **解析阶段**：AutoHotkey解析响应并提取行号信息
+4. **解析阶段**：AutoHotkey解析响应并提取多字段信息
 
 #### 超时和重试机制
 系统实现了智能的超时处理：
 - 请求超时时间：1秒
 - 自动重试机制：在某些情况下提供重试机会
-- 错误恢复：网络问题时提供清晰的错误提示
+- **新增**：详细的错误状态码支持
+  - `"Bridge Offline"`：Node.js服务不可用
+  - `"Not in Source Panel"`：当前不在源码面板
+  - `"DevTools not open"`：DevTools窗口未打开
 
 ### 源码面板行号获取功能实现
 
 源码面板行号获取功能是该工具的核心特性，其实现原理如下：
 
 #### DevTools内部API利用
-系统通过DevTools暴露的内部API获取当前编辑器的状态信息。具体实现包括：
+系统通过DevTools暴露的内部API获取当前编辑器的状态信息。**更新**：现在支持获取文件URL信息。具体实现包括：
 - 访问`UI.panels.sources`对象
 - 获取当前活动的源码视图
 - 查询编辑器的选择状态
+- **新增**：获取当前编辑文件的URL信息
 - 提取起始行号并转换为1基索引
+- **新增**：计算列号位置
 
 #### 行号计算逻辑
 ```mermaid
 flowchart TD
-Start([开始获取行号]) --> CheckPanel["检查源码面板是否存在"]
+Start([开始获取代码位置]) --> CheckPanel["检查源码面板是否存在"]
 CheckPanel --> PanelExists{"面板存在？"}
-PanelExists --> |否| ReturnZero["返回0"]
+PanelExists --> |否| ReturnZero["返回{lineNumber: 0, columnNumber: 0, fileUrl: ''}"]
 PanelExists --> |是| GetEditor["获取当前编辑器"]
 GetEditor --> EditorExists{"编辑器存在？"}
 EditorExists --> |否| ReturnZero
@@ -335,21 +347,23 @@ EditorExists --> |是| GetSelection["获取编辑器选择状态"]
 GetSelection --> HasSelection{"有选择内容？"}
 HasSelection --> |否| ReturnZero
 HasSelection --> |是| ExtractLine["提取起始行号"]
-ExtractLine --> ConvertBase["转换为1基索引"]
-ConvertBase --> ReturnLine["返回行号"]
+ExtractLine --> ExtractColumn["计算列号位置"]
+ExtractColumn --> ExtractURL["获取文件URL"]
+ExtractURL --> ConvertBase["转换为1基索引"]
+ConvertBase --> ReturnComplete["返回完整位置信息"]
 ReturnZero --> End([结束])
-ReturnLine --> End
+ReturnComplete --> End
 ```
 
 **图表来源**
-- [bridge.js:22-47](file://get-source-panel-line-number/bridge.js#L22-L47)
+- [bridge.js:22-67](file://get-source-panel-line-number/bridge.js#L22-L67)
 
 #### 热键绑定和用户体验
 系统提供了完善的热键绑定机制：
-- 主要热键：Ctrl+Alt+L
+- 主要热键：Ctrl+Alt+L（现在显示行号、列号和文件URL）
 - 环境初始化：F10
 - 强制重启：Shift+F10
-- 系统诊断：Ctrl+F12
+- 系统诊断：Ctrl+F12（现在显示完整的诊断信息）
 
 ### VBS脚本执行流程
 
@@ -412,7 +426,7 @@ CheckHealth --> HealthFail["健康检查失败"]
 ```
 
 **图表来源**
-- [get_line_number.ahk:121-148](file://get-source-panel-line-number/get_line_number.ahk#L121-L148)
+- [get_line_number.ahk:132-159](file://get-source-panel-line-number/get_line_number.ahk#L132-L159)
 
 #### 诊断工具使用
 系统提供了完整的环境配置验证流程：
@@ -425,13 +439,19 @@ CheckHealth --> HealthFail["健康检查失败"]
 
 #### 增强的错误处理
 - **智能超时处理**：1秒超时限制
-- **正则表达式解析**：`"lineNumber":(\d+)`模式匹配
-- **错误状态码**：`"Not in Source Panel"`和`"Bridge Offline"`
+- **多字段正则表达式解析**：
+  - `"lineNumber":(\d+)` 模式匹配行号
+  - `"columnNumber":(\d+)` 模式匹配列号
+  - `"fileUrl":"([^"]+)"` 模式匹配文件URL
+- **详细错误状态码**：
+  - `"Not in Source Panel"`：当前不在源码面板
+  - `"Bridge Offline"`：Node.js服务离线
+  - `"DevTools not open"`：DevTools窗口未打开
 - **健康检查集成**：`/health`端点提供进程状态
 
 **章节来源**
-- [bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
-- [get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
+- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)
 
@@ -454,7 +474,7 @@ Service[HTTP服务]
 Connector[CDP连接器]
 Health[健康检查器]
 PortProbe[端口探测器]
-LineParser[行号解析器]
+MultiFieldParser[多字段解析器]
 Diagnostic[诊断工具]
 end
 Bridge --> Service
@@ -466,7 +486,7 @@ Service --> HTTP
 Connector --> FS
 Health --> HTTP
 PortProbe --> HTTP
-LineParser --> Bridge
+MultiFieldParser --> Bridge
 Diagnostic --> Bridge
 ```
 
@@ -526,6 +546,7 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - HTTP服务器采用异步处理模型
 - JavaScript执行在DevTools内部完成，减少数据传输
 - 缓存机制避免重复的DevTools连接建立
+- **新增**：多字段数据的高效提取和序列化
 
 #### 端口探测优化
 - 异步端口检查避免阻塞主流程
@@ -554,7 +575,8 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - 优化HTTP头部信息
 
 #### 数据传输优化
-- JSON响应的最小化
+- **更新**：JSON响应的最小化
+- **新增**：多字段数据的紧凑序列化
 - 二进制数据的避免
 - 压缩传输的考虑
 
@@ -650,7 +672,7 @@ CheckHealth --> HealthFail["健康检查失败"]
 ```
 
 **图表来源**
-- [get_line_number.ahk:121-148](file://get-source-panel-line-number/get_line_number.ahk#L121-L148)
+- [get_line_number.ahk:132-159](file://get-source-panel-line-number/get_line_number.ahk#L132-L159)
 
 #### 环境配置验证
 
@@ -670,46 +692,52 @@ CheckHealth --> HealthFail["健康检查失败"]
 - 详细的错误堆栈信息
 - 时间戳记录
 - 操作上下文信息
+- **新增**：多字段解析错误的详细记录
 
 #### 性能日志
 - 响应时间统计
 - 资源使用情况
 - 并发访问监控
+- **新增**：多字段数据提取性能监控
 
 #### 用户操作日志
 - 热键触发记录
 - 功能使用统计
 - 错误发生频率
+- **新增**：多字段获取成功率统计
 
 #### 健康检查日志
 **新增功能**：系统记录健康检查和端口探测的结果：
 - 端口占用检测结果
 - 进程状态变化
 - 服务重启历史
+- **新增**：多字段数据提取成功率
 
 **章节来源**
-- [get_line_number.ahk:121-148](file://get-source-panel-line-number/get_line_number.ahk#L121-L148)
+- [get_line_number.ahk:132-159](file://get-source-panel-line-number/get_line_number.ahk#L132-L159)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [bridge.js:67-81](file://get-source-panel-line-number/bridge.js#L67-L81)
 
 ## 结论
 
-Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功地解决了从Chrome DevTools获取源码面板行号这一复杂的技术挑战。该系统的主要优势包括：
+Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功地解决了从Chrome DevTools获取源码面板行号这一复杂的技术挑战。**更新**：该系统现已升级为多字段代码位置获取工具，提供了更加丰富和实用的功能。
 
-### 技术创新性
+### 技ological创新性
 - **深度集成**：直接利用DevTools内部API，避免了传统方法的局限性
-- **实时性**：提供毫秒级的行号获取能力
+- **实时性**：提供毫秒级的行号、列号和文件URL获取能力
 - **可靠性**：完善的错误处理和恢复机制
 - **智能健康检查**：内置端口探测和进程监控功能
 - **UIA集成**：提供丰富的浏览器自动化能力
 - **增强诊断功能**：完整的系统链路检查和故障排除工具
+- **多字段支持**：同时获取行号、列号和文件URL的完整代码位置信息
 
 ### 用户体验优化
 - **简单易用**：通过热键绑定提供一键式操作
-- **可视化反馈**：实时显示获取结果
+- **可视化反馈**：实时显示获取的完整代码位置信息
 - **智能诊断**：内置完整的故障排除工具
 - **多浏览器支持**：通过UIA框架支持多种浏览器
-- **智能行号解析**：提供正则表达式解析和错误处理
+- **智能多字段解析**：提供正则表达式解析和错误处理
+- **详细错误状态**：提供"Bridge Offline"、"Not in Source Panel"等详细错误信息
 
 ### 扩展性设计
 - **模块化架构**：清晰的职责分离便于维护和扩展
@@ -717,6 +745,7 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **跨平台兼容**：基于Web技术栈的天然跨平台特性
 - **UIA框架**：提供强大的浏览器自动化基础
 - **智能超时处理**：1秒超时限制和自动重试机制
+- **多字段数据结构**：支持未来更多的代码位置信息扩展
 
 该工具不仅解决了具体的开发需求，更重要的是展示了一种将现代Web技术与传统桌面应用相结合的有效模式，为类似的技术集成项目提供了宝贵的参考经验。
 
@@ -755,14 +784,15 @@ npm list chrome-remote-interface
 1. **启动Chrome**：确保Chrome以调试模式运行
 2. **启动服务**：运行AutoHotkey脚本
 3. **打开DevTools**：在Chrome中打开源码面板
-4. **获取行号**：按下Ctrl+Alt+L热键
+4. **获取位置**：按下Ctrl+Alt+L热键，现在会显示行号、列号和文件URL
 
 #### 高级使用场景
 - **批量操作**：结合其他AutoHotkey功能实现批量代码导航
 - **集成开发**：与其他IDE或编辑器集成
-- **自动化测试**：在自动化测试中获取代码位置信息
+- **自动化测试**：在自动化测试中获取完整的代码位置信息
 - **UIA自动化**：利用UIA框架进行复杂的浏览器操作
 - **系统诊断**：使用Ctrl+F12热键进行全面的系统状态检查
+- **多字段分析**：利用完整的代码位置信息进行代码分析和统计
 
 ### 维护和更新
 
@@ -783,10 +813,11 @@ npm list chrome-remote-interface
 - **资源使用监控**：跟踪内存和CPU使用情况
 - **错误率监控**：跟踪服务错误发生频率
 - **用户行为分析**：分析功能使用模式
+- **多字段解析性能监控**：跟踪多字段数据提取效率
 
 **章节来源**
-- [bridge.js:1-122](file://get-source-panel-line-number/bridge.js#L1-L122)
-- [get_line_number.ahk:1-148](file://get-source-panel-line-number/get_line_number.ahk#L1-L148)
+- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)

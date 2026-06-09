@@ -4,6 +4,11 @@ const http = require('http');
 const CDP_PORT = 9223;
 const BRIDGE_PORT = 3000;
 
+// Cache: remember last successful result to avoid returning 0 when Sources panel is temporarily unfocused
+let lastResult = null;
+let consecutiveFailures = 0;
+const MAX_FAILURES_BEFORE_RESTART = 3;
+
 /**
  * 核心逻辑：从 DevTools 内部上下文中获取行号
  * 注意：DevTools 本身也是一个 Web 页面，需要找到其对应的 Target
@@ -72,7 +77,12 @@ async function getDevToolsLineNumber() {
         }
 
         if (result.result.value !== undefined) {
-            return result.result.value;
+            const val = result.result.value;
+            // Cache successful results (lineNumber > 0)
+            if (val && val.lineNumber > 0) {
+                lastResult = { ...val };
+            }
+            return val;
         }
 
         return { error: 'Unexpected eval result' };
@@ -111,6 +121,39 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === '/line-number' || pathname === '/line-number/') {
         const data = await getDevToolsLineNumber();
+
+        if (data && data.lineNumber > 0) {
+            // Success: reset failure counter
+            consecutiveFailures = 0;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(data));
+            return;
+        }
+
+        // CDP returned 0 (panel not focused or stale)
+        consecutiveFailures++;
+        console.log(`[bridge] lineNumber=0, consecutiveFailures=${consecutiveFailures}/${MAX_FAILURES_BEFORE_RESTART}`);
+
+        // Auto-restart bridge after consecutive failures to recover CDP connection
+        if (consecutiveFailures >= MAX_FAILURES_BEFORE_RESTART) {
+            console.log(`[bridge] Auto-restarting after ${consecutiveFailures} consecutive failures...`);
+            // Respond with cached result before restarting
+            const fallback = lastResult ? { ...lastResult, _cached: true, _restarting: true } : { lineNumber: 0, columnNumber: 0, fileUrl: '', _restarting: true };
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(fallback));
+            // Exit process — devtools.js ensureBridgeRunning will restart it
+            setTimeout(() => process.exit(0), 100);
+            return;
+        }
+
+        // Return cached result as immediate fallback
+        if (lastResult) {
+            const cached = { ...lastResult, _cached: true };
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(cached));
+            return;
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(data));
         return;
