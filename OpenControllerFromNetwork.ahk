@@ -54,9 +54,57 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
         return
     }
 
-    line := GetLineNumberFromBridge()
-    ToolTip("Line: " . line)
+    pos := GetLineNumberFromBridge()
+    ToolTip("Line: " . pos.line . ", Col: " . pos.column . ", URL: " . pos.fileUrl)
     SetTimer () => ToolTip(), -2000 ; 2秒后消失
+}
+
+; Alt+Shift+O: 在当前虚拟桌面的 Qoder/VS Code 中打开 DevTools Source 文件并定位到行号列号
+!+o:: {
+    ; 1. 通过 Bridge 获取行号、列号和文件 URL
+    if !EnsureBridgeRunning() {
+        ToolTip("Bridge 未启动")
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    pos := GetLineNumberFromBridge()
+    if !IsNumber(pos.line) {
+        ToolTip("获取位置信息失败: " pos.line)
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    lineNum := Integer(pos.line)
+    colNum := Integer(pos.column)
+    fileUrl := pos.fileUrl
+
+    if !fileUrl {
+        ToolTip("未获取到文件 URL")
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    ; 2. 将 URL 转换为本地文件路径
+    ;    file:// URL 格式: file:///D:/path/to/file.js 或 file:///C:/path
+    ;    webpack:// URL 格式: webpack:///./path/to/file.js
+    filePath := DevToolsUrlToLocalPath(fileUrl)
+    if !filePath {
+        ToolTip("无法转换为本地路径: " fileUrl)
+        SetTimer(() => ToolTip(), -3000)
+        return
+    }
+
+    ; 3. 在当前桌面的 Qoder 中打开文件
+    ToolTip("打开: " filePath " (" lineNum ":" colNum ")")
+    SetTimer(() => ToolTip(), -2000)
+    if lineNum > 0 && colNum > 0 {
+        OpenInEditor(filePath, lineNum, colNum)
+    } else if lineNum > 0 {
+        OpenInEditor(filePath, lineNum)
+    } else {
+        OpenInEditor(filePath)
+    }
 }
 
 
@@ -314,7 +362,7 @@ LaunchChromeWithDebugPort() {
         return
     }
     try {
-        Run(Format('"{1}" --remote-debugging-port={2} --user-data-dir="{3}" --variations-override-country=us'
+        Run(Format('"{1}" --remote-debugging-port={2} --user-data-dir="{3}" --disable-infobars --variations-override-country=us'
             , chromeExe, debugPort, debugProfileDir))
     } catch Error as e {
         ToolTip()
@@ -1287,12 +1335,173 @@ FindController(path)
     return ""
 }
 
-;~ 7、打开 IDEA
-OpenInIDE(file)
-{
-    global CONFIG
+;~ 6.5、DevTools URL 转本地文件路径
+; 支持 file:///D:/path、webpack:///./path、http://localhost:3000/D:/path 等格式
+DevToolsUrlToLocalPath(url) {
+    if !url
+        return ""
 
-    Run Format('"{1}" "{2}"', CONFIG.ideaPath, file)
+    ; file:// URL: file:///D:/path/to/file.js → D:/path/to/file.js
+    if RegExMatch(url, "^file:///([A-Za-z]:/.+)$", &m) {
+        return m[1]
+    }
+    ; file:// URL (无第三个斜杠): file://D:/path → D:/path
+    if RegExMatch(url, "^file://([A-Za-z]:/.+)$", &m) {
+        return m[1]
+    }
+    ; webpack:// URL: webpack:///./path/to/file.js → 需要匹配项目根目录
+    ;   或 webpack-internal:///D:/path → D:/path
+    if RegExMatch(url, "^webpack-internal:///(.+)$", &m) {
+        path := m[1]
+        if RegExMatch(path, "^[A-Za-z]:/", &_) 
+            return path
+    }
+    ; webpack://namespace/./path → 尝试去前缀
+    if RegExMatch(url, "^webpack://[^/]+/(?:\\./)?(.+)$", &m) {
+        path := m[1]
+        ; 如果包含 Windows 盘符路径
+        if RegExMatch(path, "^[A-Za-z]:/", &_)
+            return path
+        ; 否则返回相对路径，让编辑器尝试解析
+        return path
+    }
+    ; http/https URL (如 Vite dev server): 可能包含 /@fs/D:/path
+    if RegExMatch(url, "^https?://[^/]+/(?:@fs/)?([A-Za-z]:/.+)$", &m) {
+        return m[1]
+    }
+    ; 已经是本地路径
+    if RegExMatch(url, "^[A-Za-z]:/", &_)
+        return url
+
+    return ""
+}
+
+;~ 7、在编辑器中打开文件（虚拟桌面感知 + --reuse-window）
+; 流程：1. DWMWA_CLOAKED 检测当前桌面的编辑器窗口 → 2. 激活窗口 → 3. 延迟等待 Qoder IPC 注册 → 4. --reuse-window 打开文件
+; 关键：--reuse-window 复用"最近激活"的窗口，所以必须先激活当前桌面的窗口
+OpenInEditor(file, lineNum?, colNum?)
+{
+    ; 1. 找到当前虚拟桌面的 Qoder/VS Code 窗口，并获取其进程路径
+    editorHwnd := GetEditorHwndOnCurrentDesktop()
+    editorPath := ""
+
+    if editorHwnd {
+        ; 用当前桌面窗口的 PID 获取编辑器可执行文件路径
+        pid := WinGetPID("ahk_id " editorHwnd)
+        if pid
+            editorPath := ProcessPath(pid)
+
+        ; 先激活，确保 --reuse-window 复用此窗口
+        WinActivate("ahk_id " editorHwnd)
+        WinWaitActive("ahk_id " editorHwnd, , 2)
+        ; 等待 Qoder/VS Code 的 IPC 机制注册当前窗口为"最近激活"
+        Sleep(150)
+        ToolTip("[OpenInEditor] 桌面匹配 hwnd=" editorHwnd " pid=" pid " path=" editorPath)
+        SetTimer(() => ToolTip(), -5000)
+    } else {
+        ToolTip("[OpenInEditor] 当前桌面未找到编辑器窗口")
+        SetTimer(() => ToolTip(), -5000)
+    }
+
+    ; 2. 如果当前桌面没有找到，回退：检测任何桌面是否有编辑器
+    if editorPath = "" {
+        if WinExist("ahk_exe Qoder.exe") {
+            editorPath := ProcessPath(WinGetPID("ahk_exe Qoder.exe"))
+            ToolTip("[OpenInEditor] 回退: 使用其他桌面的 Qoder path=" editorPath)
+            SetTimer(() => ToolTip(), -5000)
+        } else if WinExist("ahk_exe Code.exe") {
+            editorPath := ProcessPath(WinGetPID("ahk_exe Code.exe"))
+            ToolTip("[OpenInEditor] 回退: 使用其他桌面的 VS Code path=" editorPath)
+            SetTimer(() => ToolTip(), -5000)
+        }
+    }
+
+    if editorPath = "" {
+        ToolTip("未找到 Qoder 或 VS Code 进程")
+        SetTimer(() => ToolTip(), -2000)
+        return
+    }
+
+    ; 3. 拼接命令行参数: --reuse-window --goto file:line:column
+    args := "--reuse-window"
+    if IsSet(lineNum) && lineNum {
+        if IsSet(colNum) && colNum {
+            args .= ' --goto "' file ':' lineNum ':' colNum '"'
+        } else {
+            args .= ' --goto "' file ':' lineNum '"'
+        }
+    } else {
+        args .= ' "' file '"'
+    }
+
+    ToolTip("打开: " file (lineNum ? " (" lineNum ":" (colNum ? colNum : "") ")" : ""))
+    SetTimer(() => ToolTip(), -3000)
+    Run Format('"{1}" {2}', editorPath, args)
+}
+
+; 获取当前虚拟桌面上 Qoder 或 VS Code 的窗口句柄
+; 优先使用 IVirtualDesktopManager 精确匹配桌面 ID，回退到 DWMWA_CLOAKED 检测
+GetEditorHwndOnCurrentDesktop() {
+    currentDesktopId := GetCurrentVirtualDesktopId()
+    log := "[GetEditorHwndOnCurrentDesktop] currentDesktopId=" currentDesktopId "`n"
+
+    ; 优先找 Qoder，其次找 VS Code
+    for exeName in ["Qoder.exe", "Code.exe"] {
+        winList := WinGetList("ahk_exe " exeName)
+        log .= exeName " 窗口数: " winList.Length "`n"
+        for hwnd in winList {
+            ; 方法1: 通过 IVirtualDesktopManager 精确匹配桌面 ID
+            if currentDesktopId {
+                winDesktopId := GetWindowDesktopId(hwnd)
+                try title := WinGetTitle("ahk_id " hwnd)
+                log .= "  hwnd=" hwnd " desktop=" winDesktopId " title=" SubStr(title, 1, 40) "`n"
+                if (winDesktopId && winDesktopId = currentDesktopId) {
+                    ; 过滤无标题窗口（如通知、托盘等）
+                    if title {
+                        log .= "  → 匹配当前桌面!"
+                        ToolTip(log)
+                        SetTimer(() => ToolTip(), -5000)
+                        return hwnd
+                    }
+                }
+            }
+            ; 方法2: 回退到 DWMWA_CLOAKED 检测
+            else {
+                buf := Buffer(4, 0)
+                hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
+                cloaked := NumGet(buf, 0, "Int")
+                try title := WinGetTitle("ahk_id " hwnd)
+                log .= "  hwnd=" hwnd " cloaked=" cloaked " title=" SubStr(title, 1, 40) "`n"
+                if (hr = 0 && !cloaked) {
+                    if title {
+                        log .= "  → CLOAKED匹配!"
+                        ToolTip(log)
+                        SetTimer(() => ToolTip(), -5000)
+                        return hwnd
+                    }
+                }
+            }
+        }
+    }
+    log .= "→ 未找到当前桌面的编辑器窗口"
+    ToolTip(log)
+    SetTimer(() => ToolTip(), -5000)
+    return 0
+}
+
+; 获取进程的可执行文件路径
+ProcessPath(pid) {
+    try {
+        hProcess := DllCall("OpenProcess", "UInt", 0x1000, "Int", 0, "UInt", pid, "Ptr")
+        if !hProcess
+            return ""
+        buf := Buffer(520, 0)  ; MAX_PATH * 2 (Unicode)
+        DllCall("QueryFullProcessImageNameW", "Ptr", hProcess, "UInt", 0, "Ptr", buf, "UIntP", &bufLen:=260, "Int")
+        DllCall("CloseHandle", "Ptr", hProcess)
+        return StrGet(buf, "UTF-16")
+    } catch {
+        return ""
+    }
 }
 ;~ 8、执行命令工具
 ExecCmd(cmd)
@@ -1313,19 +1522,29 @@ GetLineNumberFromBridge() {
         Http.Open("GET", "http://localhost:3000/line-number", true)
         Http.Send()
         if !Http.WaitForResponse(1) ; 1秒超时
-            return "Timeout"
+            return {line: "Timeout", column: 0, fileUrl: ""}
             
-        ; 简单的 JSON 解析逻辑（生产环境建议使用专用的 JSON 库）
+        ; JSON 解析：同时提取行号、列号和文件 URL
         response := Http.ResponseText
-        if RegExMatch(response, '"lineNumber":(\d+)', &match) {
-            return match[1]
+        lineNum := 0, colNum := 0, fileUrl := ""
+        if RegExMatch(response, '"lineNumber":(\d+)', &matchLine) {
+            lineNum := matchLine[1]
+        }
+        if RegExMatch(response, '"columnNumber":(\d+)', &matchCol) {
+            colNum := matchCol[1]
+        }
+        if RegExMatch(response, '"fileUrl":"([^"]+)"', &matchUrl) {
+            fileUrl := matchUrl[1]
+        }
+        if lineNum {
+            return {line: lineNum, column: colNum, fileUrl: fileUrl}
         }
         if RegExMatch(response, '"error"\s*:\s*"([^"]+)"', &errMatch) {
-            return errMatch[1]
+            return {line: errMatch[1], column: 0, fileUrl: ""}
         }
-        return "Not in Source Panel"    
+        return {line: "Not in Source Panel", column: 0, fileUrl: ""}    
     } catch Error as err {
-        return "Offline"
+        return {line: "Offline", column: 0, fileUrl: ""}
     }
 }
 

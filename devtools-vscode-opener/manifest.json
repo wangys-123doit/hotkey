@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "DevTools VSCode Opener",
+  "version": "2.0.0",
+  "devtools_page": "devtools.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "open-in-vscode": {
+      "suggested_key": {
+        "default": "Alt+Shift+O",
+        "mac": "Alt+Shift+O"
+      },
+      "description": "Open in VSCode"
+    },
+    "open-in-qoder": {
+      "suggested_key": {
+        "default": "Alt+Shift+Q",
+        "mac": "Alt+Shift+Q"
+      },
+      "description": "Open in Qoder"
+    }
+  },
+  "permissions": [
+    "tabs",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}

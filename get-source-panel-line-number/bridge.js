@@ -22,16 +22,30 @@ async function getDevToolsLineNumber() {
         const expression = `
             (() => {
                 const panel = UI.panels && UI.panels.sources;
-                if (!panel) return 0;
+                if (!panel) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
 
                 const sourcesViewRaw = panel.sourcesViewInternal || panel.sourcesView || panel._sourcesView || panel._sourcesViewInternal;
                 const sourcesView = (typeof sourcesViewRaw === 'function')
                     ? sourcesViewRaw.call(panel)
                     : sourcesViewRaw;
-                if (!sourcesView || !sourcesView.currentSourceFrame) return 0;
+                if (!sourcesView || !sourcesView.currentSourceFrame) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
 
                 const frame = sourcesView.currentSourceFrame();
-                if (!frame || !frame.textEditorInternal) return 0;
+                if (!frame || !frame.textEditorInternal) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
+
+                // 获取当前文件 URL
+                let fileUrl = '';
+                try {
+                    // uiSourceCode() 是 getter 方法，需要调用
+                    const uiSourceCode = (typeof frame.uiSourceCode === 'function')
+                        ? frame.uiSourceCode()
+                        : frame.uiSourceCode;
+                    if (uiSourceCode) {
+                        fileUrl = (typeof uiSourceCode.url === 'function')
+                            ? uiSourceCode.url()
+                            : (uiSourceCode._url || uiSourceCode.url || '');
+                    }
+                } catch(e) {}
 
                 const state = frame.textEditorInternal.state;
                 const sel = state && state.selection;
@@ -40,10 +54,15 @@ async function getDevToolsLineNumber() {
                 const doc = state && state.doc;
 
                 if (doc && typeof from === 'number' && doc.lineAt) {
-                    return doc.lineAt(from).number;
+                    const lineInfo = doc.lineAt(from);
+                    const lineNumber = lineInfo.number;
+                    // 计算列号: 光标位置 from 减去行起始位置
+                    const lineStart = lineInfo.from;
+                    const columnNumber = from - lineStart + 1; // 1-based 列号
+                    return { lineNumber, columnNumber, fileUrl };
                 }
 
-                return 0;
+                return { lineNumber: 0, columnNumber: 0, fileUrl };
             })()
         `;
 
@@ -53,7 +72,7 @@ async function getDevToolsLineNumber() {
         }
 
         if (result.result.value !== undefined) {
-            return { lineNumber: result.result.value };
+            return result.result.value;
         }
 
         return { error: 'Unexpected eval result' };

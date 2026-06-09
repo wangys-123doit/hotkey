@@ -172,7 +172,7 @@ function Do-Enable {
     $oldCmd = Backup-CurrentCommand
 
     # 写入新命令
-    $newCmd = "`"$chromeExe`" --remote-debugging-port=$DebugPort --user-data-dir=`"$DebugProfile`" --single-argument %1"
+    $newCmd = "`"$chromeExe`" --remote-debugging-port=$DebugPort --user-data-dir=`"$DebugProfile`" --disable-infobars --single-argument %1"
     Set-CurrentCommand -Command $newCmd
 
     # 验证写入成功

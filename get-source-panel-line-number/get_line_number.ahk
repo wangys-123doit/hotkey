@@ -74,14 +74,25 @@ GetLineNumber() {
         Http.Open("GET", BRIDGE_URL, true)
         Http.Send()
         if !Http.WaitForResponse(1)
-            return "Timeout"
+            return {line: "Timeout", column: 0, fileUrl: ""}
             
-        if RegExMatch(Http.ResponseText, '"lineNumber":(\d+)', &match) {
-            return match[1]
+        response := Http.ResponseText
+        lineNum := 0, colNum := 0, fileUrl := ""
+        if RegExMatch(response, '"lineNumber":(\d+)', &matchLine) {
+            lineNum := matchLine[1]
         }
-        return "Not in Source Panel"
+        if RegExMatch(response, '"columnNumber":(\d+)', &matchCol) {
+            colNum := matchCol[1]
+        }
+        if RegExMatch(response, '"fileUrl":"([^"]+)"', &matchUrl) {
+            fileUrl := matchUrl[1]
+        }
+        if lineNum {
+            return {line: lineNum, column: colNum, fileUrl: fileUrl}
+        }
+        return {line: "Not in Source Panel", column: 0, fileUrl: ""}
     } catch Error as err {
-        return "Bridge Offline"
+        return {line: "Bridge Offline", column: 0, fileUrl: ""}
     }
 }
 
@@ -106,8 +117,8 @@ F10::InitEnvironment()
 
 ; 获取行号热键
 ^!l:: {
-    line := GetLineNumber()
-    ToolTip("DevTools Line: " . line)
+    pos := GetLineNumber()
+    ToolTip("DevTools Line: " . pos.line . ", Col: " . pos.column . ", URL: " . pos.fileUrl)
     SetTimer () => ToolTip(), -2000
 }
 

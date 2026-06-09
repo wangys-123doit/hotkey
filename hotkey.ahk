@@ -18,16 +18,13 @@ if (A_Args.Length > 0 && A_Args[1] = "--focus-vscode") {
     ExitApp()
 }
 
-#Include hotkeys_public.ahk
-#Include OpenControllerFromNetwork.ahk
-#Include superFlow.ahk
-#Include rdp.ahk
-#Include CycleExplorerSwitcher.ahk
+#Include %A_ScriptDir%\hotkeys_public.ahk
+#Include %A_ScriptDir%\OpenControllerFromNetwork.ahk
+#Include %A_ScriptDir%\superFlow.ahk
+#Include %A_ScriptDir%\rdp.ahk
+#Include %A_ScriptDir%\CycleExplorerSwitcher.ahk
 ; 可选包含：文件不存在时忽略，不会在加载阶段报错
-#Include *i hotkeys_private.ahk
-; #Include *i a.ahk
-;~ ; #:Win,ctrl:^,shift:+,alt:! left左键：<,right右键：>
-;~ #Include RunRadiator.ahk
+#Include *i %A_ScriptDir%\hotkeys_private.ahk
 
 
 ; 1. 权限自提升与任务注册逻辑
@@ -42,7 +39,7 @@ if !A_IsAdmin {
 }
 
 ; 此时已是管理员权限，检查文件标记判断是否需要注册任务计划
-;~ 用户配置文件
+; 用户配置文件
 configPath := A_ScriptDir "\config.ini"
 isTaskCreated := IniRead(configPath, "Setup", "TaskCreated", "0")
 
@@ -54,7 +51,6 @@ if (isTaskCreated == "0") {
     try {
         RunWait(createTaskCmd, , "Hide")
         IniWrite("1", configPath, "Setup", "TaskCreated")
-        ;~ MsgBox("自启任务已成功注册！下次开机脚本将自动以管理员权限运行。", "注册成功", 64)
     } catch as e {
         MsgBox("任务计划注册失败：`n" e.Message, "系统错误", 16)
     }
@@ -67,211 +63,18 @@ global x86ProgramFilesDir := EnvGet("ProgramFiles(x86)")
 ; ^ 表示匹配字符串开头，i 表示不区分大小写
 global D_Programs := RegExReplace(A_ProgramFiles, "(?i)^C:", "D:")
 
-; 获取 C:\Users\用户名\AppData\Local
-;~ global LocalPath := EnvGet("LOCALAPPDATA")
+; 窗口切换与应用启动框架已拆分到独立模块
+#Include %A_ScriptDir%\lib\WindowToggle.ahk
 
-SwapProgramsPrefix(path) {
-    if InStr(path, A_ProgramsCommon, false) = 1 {
-        return A_Programs SubStr(path, StrLen(A_ProgramsCommon) + 1)
-    }
-
-    if InStr(path, A_Programs, false) = 1 {
-        return A_ProgramsCommon SubStr(path, StrLen(A_Programs) + 1)
-    }
-
-    return ""
-}
-
-RunAppPathWithPrefixFallback(path) {
-    ; 协议路径（如 ms-phone: / obsidian://）不走文件存在判断，直接尝试运行
-    if (RegExMatch(path, "i)^[a-z][a-z0-9+.-]*:(//)?") && !RegExMatch(path, "i)^[a-z]:\\")) {
-        try {
-            Run path
-            return true
-        } catch Error as e {
-            MsgBox("协议启动失败：`n" path "`n`n" e.Message, "启动失败", 16)
-            return false
-        }
-    }
-
-    primary := path
-    alternate := SwapProgramsPrefix(primary)
-
-    if FileExist(primary) {
-        try {
-            Run primary
-            return true
-        } catch Error as e {
-            MsgBox("启动失败：`n" primary "`n`n" e.Message, "启动失败", 16)
-            return false
-        }
-    }
-
-    if (alternate != "" && FileExist(alternate)) {
-        try {
-            Run alternate
-            return true
-        } catch Error as e {
-            MsgBox("启动失败：`n" alternate "`n`n" e.Message, "启动失败", 16)
-            return false
-        }
-    }
-
-    if (alternate != "") {
-        MsgBox("路径不存在：`n1) " primary "`n2) " alternate, "启动失败", 16)
-    } else {
-        MsgBox("路径不存在：`n" primary, "启动失败", 16)
-    }
-
-    return false
-}
-
-BlockWinPFor(durationMs := 300) {
-    static handler := (*) => 0
-    Hotkey("#p", handler, "On")
-    SetTimer(() => Hotkey("#p", handler, "Off"), -durationMs)
-}
+; BlockWinPFor / ToggleWindow 系列 / GetMainWindowByExe 已迁移至 WindowToggle.ahk
 
 ; #p::return
 ; 微信hwnd缓存值
 global g_weixinHwnd := 0
 
-; 开关窗口函数，判断窗口激活状态并执行显示隐藏操作
-; ahk_exe:exe程序名
-; APP_PATH:程序路径
-ToggleWindow(ahk_exe, APP_PATH) {
-    if WinExist("ahk_exe " ahk_exe) {
-        ; 检查窗口是否已激活
-        if WinActive("ahk_exe " ahk_exe) {
-            WinMinimize
-        } else {
-            WinActivate
-        }
-    } else {
-        RunAppPathWithPrefixFallback(APP_PATH)
-    }
-}
-ToggleWindowByTitle(ahk_exe, WinTitle, APP_PATH) {
-    if WinExist(WinTitle) {
-        ; 检查窗口是否已激活
-        if WinActive(WinTitle) {
-            WinMinimize
-        } else {
-            WinActivate
-        }
-    } else {
-        RunAppPathWithPrefixFallback(APP_PATH)
-    }
-
-}
-; 开关窗口函数，判断窗口激活状态并执行显示隐藏操作
-; ahk_exe:exe程序名
-; WinTitle :程序窗口标题
-; APP_PATH:程序路径
-ToggleWindow2(ahk_exe, WinTitle, APP_PATH) {
-    if WinExist("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
-        ; 检查窗口是否已激活
-        if WinActive("ahk_exe " ahk_exe,WinTitle, "Photos and Videos") {
-            WinMinimize
-        } else {
-            WinActivate
-        }
-    } else {
-        RunAppPathWithPrefixFallback(APP_PATH)
-    }
-}
-; 开关窗口函数，判断窗口激活状态并执行显示隐藏操作
-; ahk_exe:exe程序名
-; WinTitle :程序窗口标题
-; APP_PATH:程序路径
-ToggleWindow12(ahk_exe, WinTitle, APP_PATH) {
-    ;WinGetTitle(WinGetID(ahk_exe))
-    ;MsgBox WinGetID("ahk_exe " ahk_exe)
-
-    ;SetTitleMatchMode 2
-        ; ahk_id:应用窗口id
-    ;ahk_id := WinGetCount(WinTitle)
-              ;      MsgBox ahk_id . WinGetTitle(WinTitle)
-;CountAll := WinGetCount("ahk_exe " ahk_exe)
-;CountExcluded := WinGetCount(,, "Weixin|Chrome")
-;MsgBox CountExcluded " out of " CountAll " windows were counted"
-
-ids := WinGetList("ahk_exe " ahk_exe,WinTitle, "Photos and Videos")
-for this_id in ids
-{
-    WinActivate this_id
-    this_class := WinGetClass(this_id)
-    this_title := WinGetTitle(this_id)
-    Result := MsgBox(
-    (
-        "Visiting All Windows
-        " A_Index " of " ids.Length "
-        ahk_id " this_id "
-        ahk_class " this_class "
-        " this_title "
-
-        Continue?"
-    ),, 4)
-    if (Result = "No")
-        break
-}
-
-}
-ToggleWindow22(ahk_exe, WinTitle, APP_PATH) {
-    ids := WinGetList("ahk_exe " ahk_exe,WinTitle, "Program Manager")
-    for this_id in ids
-    {
-        WinActivate this_id
-        this_class := WinGetClass(this_id)
-        this_title := WinGetTitle(this_id)
-        Result := MsgBox(
-        (
-            "Visiting All Windows
-            " A_Index " of " ids.Length "
-            ahk_id " this_id "
-            ahk_class " this_class "
-            " this_title "
-
-            Continue?"
-        ),, 4)
-        if (Result = "No")
-            break
-    }
-}
-; 获取进程名称的函数
-GetProcessName(pid) {
-    ; 创建一个足够大的缓冲区来存储进程路径
-    buffer := DllCall("GlobalAlloc", "uint", 0x40, "uint", 255, "ptr")  ; 0x40 为堆分配标志，255 为最大大小
-
-    ; 使用 DllCall 来获取进程名称
-    DllCall("psapi.dll\GetModuleFileNameExW", "ptr", pid, "ptr", buffer, "uint", 255)
-
-    ; 将缓冲区转换为字符串
-    processName := StrGet(buffer)
-
-    ; 释放缓冲区
-    DllCall("GlobalFree", "ptr", buffer)
-
-    return processName
-}
-;~ 过滤「可见 + 有标题」窗口
-GetMainWindowByExe(ahk_exe,winTitle) {
-    hwnds := WinGetList("ahk_exe " ahk_exe)
-    for hwnd in hwnds {
-        title := WinGetTitle("ahk_id " hwnd)
-        style := WinGetStyle("ahk_id " hwnd)
-        ;~ MsgBox title
-        ; 必须：可见 + 有标题
-        if (title == winTitle && (style & 0x10000000)) ; WS_VISIBLE
-            return hwnd
-    }
-    return 0
-}
-
 
 ; 有道词典复制粘贴并查询翻译
 pasteEnter(){
-    ;~ 先设置长文本编辑器获取焦点
     ; 加入重试机制 (try...catch + Loop)，防止Chrome_WidgetWin_01还没来得及完全初始化，导致ControlFocus失败
     success := false
     Loop 30 {
@@ -329,280 +132,17 @@ UIAPasteEnter(textToSet) {
     }
 }
 
-; ===============================================================
-;  InputHook + 智能中英文输入法自动切换引擎 (AHK v2)
-; ===============================================================
-; 功能：
-;   1. 输入自然语言 → 自动切中文
-;   2. 输入代码符号 → 自动切英文
-;   3. 行首字母 → 自动切英文（函数、变量命名）
-;   4. 不影响 Ctrl / Alt / Win / Shift 组合键
-;   5. 所有逻辑只在“普通文本输入”时触发
-; ===============================================================
-
-
-global g_IME := "zh"  ; 输入法默认中文状态
-
-SwitchToChinese() {
-    global g_IME
-    if g_IME != "zh" {
-        Send "{Shift}"
-        ; 确保输入法已进入拼音组合态
-        EnsurePinyinReady()
-        g_IME := "zh"
-    }
-}
-
-SwitchToEnglish() {
-    global g_IME
-    if g_IME != "en" {
-        Send "{Shift}"
-        g_IME := "en"
-    }
-}
-
-
-
-; 末尾是字母/数字/下划线 → 代码环境
-IsCodeContext() {
-    text := GetLeftText("")
-    return RegExMatch(text, "[A-Za-z0-9_]$")
-}
-
-; 末尾不是字母/数字 → 自然语言环境
-IsNaturalContext() {
-    return !IsCodeContext()
-}
-
-; 行首时输入字母 → 多数情况是写代码
-IsLineStart() {
-    backup := A_Clipboard
-    A_Clipboard := ""
-
-    Send "+{Left}"
-    Send WinActive("ahk_group ShellGroup") ? "^{insert}" : "^c"
-    ClipWait 0.2
-    char := A_Clipboard
-
-    A_Clipboard := backup
-    Send "{Right}"
-
-    return (char = "" || char = "`n")
-}
+; 输入法切换引擎已拆分到独立模块
+#Include %A_ScriptDir%\lib\ImeSwitcher.ahk
 
 ; ============================
-;    InputHook 输入拦截引擎
+;  以下函数已迁移至 ImeSwitcher.ahk：
+;    GetLeftText / EnsurePinyinReady / ConvertCharacter / SwitchPunctuation
 ; ============================
-;global ih := InputHook("V")   ; 'V' = OnChar 事件
-;ih.OnChar := (ihObj, char) => HandleChar(char)
-;ih.Start()
-
-; ============================
-;       核心策略逻辑
-; ============================
-HandleChar(char) {
-
-    ; 1. 如果是 Ctrl / Alt / Win 组合，不处理
-    if GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") || GetKeyState("LWin", "P")
-        return
-
-    ; 2. 输入字母：判断环境
-    if RegExMatch(char, "[A-Za-z]") {
-
-        ; 行首输入字母 = 基本是代码
-        if IsLineStart() {
-            SwitchToEnglish()
-            return
-        }
-
-        ; 光标前是代码上下文 → 英文
-        if IsCodeContext() {
-            SwitchToEnglish()
-            return
-        }
-
-        ; 否则是自然语言 → 中文sSsS
-        SwitchToChinese()
-        return
-    }
-
-    ; 3. 输入代码符号 → 强制英文
-    if RegExMatch(char, "[\(\)\{\}\[\]\<\>\=\+\-\*\/\.\:]") {
-        SwitchToEnglish()
-        return
-    }
-
-    ; 4. 中文标点或空格 → 切中文
-    if RegExMatch(char, "[，。；：？！、 ]") {
-        SwitchToChinese()
-        return
-    }
-}
-
-; ============================
-;  上下文检测：获取光标前内容
-; ============================
-GetLeftText(switchType) {
-    backup := A_Clipboard
-    A_Clipboard := ""
-    Switch switchType
-    {
-    ;~ 判断如果是标点符号则发送shift left 只复制光标前一位标点符号
-    Case "punctuation":
-        SendEvent "{Shift Down}{Left}{Shift Up}"
-    Case "pinyin":
-        ;~ 非标点符号则则发送ctrl+shift left复制整个拼音字母
-        SendEvent "{Ctrl Down}{Shift Down}{Left}{Ctrl Up}{Shift Up}"
-    Default:
-        SendEvent "{Ctrl Down}{Shift Down}{Left}{Ctrl Up}{Shift Up}"
-    }
-
-    Sleep 20
-    ; 根据当前活动窗口如果是shell环境执行ctrl+insert复制，否则ctrl+c
-    if WinActive("ahk_group ShellGroup")
-        SendEvent "{Ctrl Down}{Insert}{Ctrl Up}"
-    else
-        SendEvent "{Ctrl Down}{c}{Ctrl Up}"
-    ;ClipWait 0.2
-   if !ClipWait(0.3) {
-        A_Clipboard := backup
-        return ""
-    }
-    text := A_Clipboard
-    A_Clipboard := backup
-    ; 取消选择（恢复光标）
-    ;Send "{Right}"
-    return text
-}
-
-
-EnsurePinyinReady() {
-    Loop 2 {
-        Send "a"
-        Sleep 50
-        Send "{Backspace}"
-        Sleep 20
-    }
-}
-
-; 转换字符1、转换标点符号 2、转换拼音为中文
-ConvertCharacter() {
-    ;~ 1、转换标点符号
-    switchType := "punctuation"
-    ;~ 先获取光标前第一位字符
-    lastChar := GetLeftText(switchType)
-    ;~ ToolTip("111111111" lastChar)
-    ;~ 判断末尾字符为中文标点符号
-    static CN_PUNCT := "，。！？；：、（）【】《》“”‘’·￥—"
-    ;~ ToolTip("match:" match . "lastChar:" lastChar)
-    if InStr(CN_PUNCT, lastChar) {
-        Switch lastChar
-        {
-        ;~ 判断如果是标点符号则再发送一次shift left 只复制光标前两格标点符号
-        Case "…":
-        Case "—":
-        Case "、":
-            Send "+{Left}"
-        ;~ Case "todo":
-            ;~ 非标点符号则则发送ctrl+shift left复制整个拼音字母
-            ;~ Send "^+{Left}"
-        ;~ Default:
-
-        }
-        ;~ 将中文标点符号替换成英文标点符号
-        SwitchPunctuation(true,lastChar)
-        return
-    }
-
-     ;~ Chr(34)：双引号，Chr(39)：单引号，Chr(96)：反引号`
-    static ENG_PUNCT := ",.;:?!()[]<>\\$" . Chr(34) . Chr(96)
-    ; 已经是英文标点
-    if InStr(ENG_PUNCT, lastChar) {
-        SwitchPunctuation(false,lastChar)
-        return
-    }
-    ;~ 2、转换拼音为中文
-    ; 获取光标前文本
-    switchType := "pinyin"
-    text := GetLeftText(switchType)
-    ; 3. 正则：匹配“末尾连续的英文字母”
-    word := ""
-    if RegExMatch(text, "([A-Za-z]+)$", &m)
-        word := m[1]
-
-    if word = ""
-        return
-
-    ;~ 状态触发
-    ; 1. 强制 IME 进入拼音 composing
-    SendEvent "a"
-    Sleep 20
-    SendEvent "{Backspace}"
-    Sleep 20
-
-    ;~ SendEvent word
-    for ch in StrSplit(word) {
-        SendEvent ch
-        Sleep 10
-    }
-     ;~ 发送空格前稍等一下（输入法处理）
-    Sleep 50
-    SendInput "{Space}"
-    ;~ IME 自动化里，没有“等事件”，只有“触发状态 + 给时间”。
-    ;~ 彻底最小化 Sleep（不同窗口自适应）
-    ;~ 拼音失败自动重试 / 回退机制
-}
-
-;~ cnToEng：是否中文转英文标点的标识，判断文本末尾是否有中文标点符号，有则替换成英文标点符号输出
-SwitchPunctuation(cnToEng,char) {
-    ; 中文标点和英文标点的映射数组
-    static punctuationMap := [
-        "，", ",",
-        "。", ".",
-        "；", ";",
-        "：", ":",
-        "？", "?",
-        "！", "!",
-        "（", "(",
-        "）", ")",
-        "【", "[",
-        "】", "]",
-        "《", "<",
-        "》", ">",
-        "、", "// ", ; 中文顿号替换为代码注释符号
-        "“",'"',
-        "”",'"',
-        "‘","'",
-        "·",Chr(96), ; Chr(96)代表反引号`,todo: `不能转 ·
-        "￥","$",
-        ;~ "……","^",
-        "—","_",
-    ]
-    ; 查找对应的英文标点
-    for index, value in punctuationMap {
-        if (value == char) {
-            if (cnToEng) {
-                engPunctuation := punctuationMap[index + 1]  ; 返回对应的英文标点
-            } else {
-                engPunctuation := punctuationMap[index - 1]  ; 返回对应的中文标点
-            }
-            ;~ SendText 的工作方式
-            ;~ ❌ 不模拟按键
-            ;~ ❌ 不经过 Alt / Shift / Ctrl
-            ;~ ❌ 不生成 KeyDown / KeyUp
-            ;~ ✅ 直接向当前输入上下文插入 Unicode 文本
-            ;~ 输出元字符创+转换后的英文标点
-            SendText(engPunctuation)
-            return
-        }
-    }
-}
 ; 打开将光标前英文单词转为中文
 LWin & z::
 {
     ; 强制清理所有修饰键
-    ;~ Send "{LAlt Up}"
-    ;~ Sleep 20
    ConvertCharacter()
 }
 ; 打开将光标前英文单词转为中文
@@ -685,7 +225,6 @@ LWin & z::
     if (UniqueID) {
                ; MsgBox 111
 
-        ;~ WinWait("ahk_class " ahk_class)  ; 等待窗口准备好
         WinRestore(UniqueID)  ; 恢复窗口
         WinActivate(UniqueID) ; Activate the window found above
     } else {
@@ -704,15 +243,6 @@ LWin & z::
 }
 
 
-; win+F8打开手机连接
-;~ #F8::
-;~ {
-	;~ ahk_exe := "PhoneExperienceHost.exe"
-	;~ APP_PATH := A_ProgramFiles "\WindowsApps\Microsoft.YourPhone_1.25072.63.0_x64__8wekyb3d8bbwe\PhoneExperienceHost.exe"
-
-    ;~ ToggleWindow(ahk_exe, APP_PATH)
-
-;~ }
 ;{Blind}前缀可以将一些按键与之前已经按下或输入的其他修饰键进行组合使用，就是盲目的保留之前的按键组合
 ;*^1::Send "{Blind}{Home}"
 ;*^2::Send "{Blind}{End}"
@@ -837,16 +367,15 @@ class ScriptLifecycle
             fn.Call(reason, code)
     }
 }
-global hwndCache := Map()
+; hwndCache 已迁移至 ChromeAppMgr.ahk
 ScriptLifecycle.RegisterReload(BuildBrowserCache)
 
 ScriptLifecycle.Init()
 
 ^!r::
 {
+    ; BuildBrowserCache 已通过 ScriptLifecycle.RegisterReload 注册，Reload 时自动调用
     ScriptLifecycle.Reload()
-    ; 重新构建浏览器缓存
-    BuildBrowserCache()
 }
 
 GroupAdd "ShellGroup", "ahk_exe mintty.exe"
@@ -887,7 +416,7 @@ CapsLock::
     }
 }
 #HotIf
-;~ CapsLock 双击触发粘贴操作
+
 /* global doubleClickInterval := 300 ; 双击判断的时间间隔（毫秒）
 global lastPressTime := 0 ; 记录上次 CapsLock 按下的时间
 
@@ -1044,7 +573,7 @@ $#CapsLock:: ; 点击 win+CapsLock键打开有道
 openYoudao(){
     ; 发送 Tab 键切换焦点
     ahk_exe := "YoudaoDict.exe"
-    ;~ 如果已启动
+    ; 如果已启动
     if WinExist("ahk_exe " ahk_exe){
         WinActivate("ahk_exe " ahk_exe)
         if WinWaitActive("ahk_exe " ahk_exe,,0.5){
@@ -1052,11 +581,11 @@ openYoudao(){
         }
 
     } else {
-        ;~ 未启动时发送指令键启动程序
+        ; 未启动时发送指令键启动程序
         ; Send("^{LWin down}3^{LWin up}")
         APP_PATH := A_Programs "\有道\网易有道翻译\网易有道翻译.lnk"
         RunAppPathWithPrefixFallback(APP_PATH)
-        ;~ 等待程序启动
+        ; 等待程序启动
         WinWait("ahk_exe " ahk_exe)
 
         if WinExist("ahk_exe " ahk_exe){
@@ -1147,7 +676,6 @@ $#^c::return
     ToggleWindow(ahk_exe, APP_PROTOCOL)
 
 }
-;~ ^#s::Run("ms-windows-store://library")
 
 showAppListView(ahk_class) {
     ; 获取所有符合条件的窗口句柄（按类名“CabinetWClass”）
@@ -1165,7 +693,7 @@ showAppListView(ahk_class) {
     appMap := Map()
     appMap["CabinetWClass"] := "文件资源管理器"
     appMap["XLMAIN"] := "Excel"
-    ;~ 查找如果有AutoHotkeyGUI则先WinClose，然后重新生成AppListView
+    ; 查找如果有AutoHotkeyGUI则先WinClose，然后重新生成AppListView
     if WinExist("ahk_class AutoHotkeyGUI"){
 
         windows_gui := WinGetList("ahk_class AutoHotkeyGUI")
@@ -1301,126 +829,11 @@ A_Programs: 当前用户开始菜单程序目录
 }
 
 
-openVSCode(ahkExe, appPath, workspace := "") {
-    hwnd := WinExist("ahk_exe " ahkExe)
-    if hwnd {
-        if WinActive("ahk_id " hwnd) {
-            WinMinimize("ahk_id " hwnd)
-        } else {
-            WinShow("ahk_id " hwnd)
-            WinActivate("ahk_id " hwnd)
-        }
-        return
-    }
+; 应用启动框架已拆分到独立模块
+#Include %A_ScriptDir%\lib\AppLauncher.ahk
 
-    LaunchVSCodeAsStandardUser(appPath, workspace)
-
-    ; 启动后尝试激活
-    if WinWait("ahk_exe " ahkExe, , 6) {
-        WinActivate("ahk_exe " ahkExe)
-    }
-}
-
-LaunchVSCodeAsStandardUser(appPath, workspace := "") {
-    try {
-        launchPath := ResolveAppPath(appPath)
-
-        args := "--reuse-window"
-        if (workspace != "") {
-            args .= " " QuoteArg(workspace)
-        }
-
-        launchTarget := ResolveShortcutTarget(launchPath)
-        if !LaunchViaLimitedScheduledTask(launchTarget, args, "AHK_LaunchVSCode_Unelevated") {
-            throw Error("无法通过任务计划（LIMITED）启动 VS Code。")
-        }
-    } catch Error as e {
-        MsgBox "启动 VSCode 失败:`n" e.Message, "错误", "Iconx"
-    }
-}
-
-LaunchQoderAsStandardUser(appPath) {
-    try {
-        launchPath := ResolveAppPath(appPath)
-        launchTarget := ResolveShortcutTarget(launchPath)
-        if !LaunchViaLimitedScheduledTask(launchTarget, , "AHK_LaunchQoder_Unelevated") {
-            throw Error("无法通过任务计划（LIMITED）启动 Qoder。")
-        }
-    } catch Error as e {
-        MsgBox "启动 Qoder 失败:`n" e.Message, "错误", "Iconx"
-    }
-}
-
-; 解析应用路径，支持 C:/D: 盘前缀回退
-ResolveAppPath(appPath) {
-    primary := appPath
-    alternate := SwapProgramsPrefix(primary)
-
-    if FileExist(primary)
-        return primary
-    if (alternate != "" && FileExist(alternate))
-        return alternate
-
-    if (alternate != "") {
-        throw Error("路径不存在:`n1) " primary "`n2) " alternate)
-    }
-    throw Error("路径不存在:`n" primary)
-}
-
-LaunchViaLimitedScheduledTask(target, args := "", taskName := "AHK_LaunchApp_Unelevated") {
-    taskRun := '\"' target '\"'
-    if (args != "") {
-        taskRun .= " " args
-    }
-
-    createCmd := 'schtasks /create /tn "' taskName '" /tr "' taskRun '" /sc ONCE /st 00:00 /rl LIMITED /it /f'
-    runCmd := 'schtasks /run /tn "' taskName '"'
-
-    createExitCode := RunWait(createCmd, , "Hide")
-    if (createExitCode != 0) {
-        return false
-    }
-
-    runExitCode := RunWait(runCmd, , "Hide")
-    return (runExitCode = 0)
-}
-
-ShellExecuteAsStandardUser(target, args := "", workDir := "") {
-    try {
-        if (workDir = "") {
-            SplitPath(target, , &workDir)
-        }
-
-        ; 关键点：通过 Shell.Application（Explorer 进程）发起，保持普通权限
-        shellApp := ComObject("Shell.Application")
-        shellApp.ShellExecute(target, args, workDir, "open", 1)
-        return true
-    } catch {
-        return false
-    }
-}
-
-ResolveShortcutTarget(path) {
-    if !RegExMatch(path, "i)\.lnk$") {
-        return path
-    }
-
-    try {
-        shortcut := ComObject("WScript.Shell").CreateShortcut(path)
-        target := shortcut.TargetPath
-        if (target != "" && FileExist(target)) {
-            return target
-        }
-    } catch {
-    }
-
-    return path
-}
-
-QuoteArg(s) {
-    ; Windows 参数安全引用
-    return '"' StrReplace(s, '"', '\"') '"'
-}
+; ResolveAppPath / LaunchViaLimitedScheduledTask / ShellExecuteAsStandardUser /
+; ResolveShortcutTarget / QuoteArg 已迁移至 AppLauncher.ahk
 
 ; 快捷键 Win+T 切换置顶状态
 #t::
@@ -1429,8 +842,6 @@ QuoteArg(s) {
     if hwnd
         WinSetAlwaysOnTop(-1, "ahk_id " hwnd) ; -1 = 切换
 }
-
-;~ LWin & d:: SendEvent "{LWin Down}1{LWin Up}" 激活idea
 
 +space::
 {
@@ -1447,7 +858,6 @@ QuoteArg(s) {
     if WinExist("ahk_exe " ahk_exe) {
         ; 获取主窗口的进程 ID (PID)
         ahk_id := GetMainWindowByExe(ahk_exe,winTitle)
-        ;~ ToolTip 1111 ':' ahk_id
         if (ahk_id) {
             ; 这是 Clash Verge 程序
             if WinActive("ahk_id " ahk_id) {
@@ -1698,321 +1108,19 @@ DoSuspend() {
     ToggleWindow(ahk_exe, APP_PATH)
 }
 
-global CONFIG := LoadConfig()
-global APP_DIR := A_ScriptDir "\apps"
+; Chrome App 管理模块已拆分到独立文件
+#Include %A_ScriptDir%\lib\ChromeAppMgr.ahk
 
+; 以下函数已迁移至 ChromeAppMgr.ahk：
+; GuiAppManager / GenerateSelected / DeleteSelected / DeleteWithTrayTip / GenerateApp
+; BuildChromeArgs / CreateChromeApp / CreateWithTrayTip / LoadConfig
+; BuildChromeArgs / CreateChromeApp / CreateWithTrayTip / LoadConfig 已迁移
+; （原函数块已删除）
 
-global AppMgr := {}
-; #f10::
-; {
-; 	GuiAppManager()
-; }
+; #0 / BuildBrowserCache / DumpMap / ActivateApp 已迁移至 ChromeAppMgr.ahk
+; 删除第一段
 
-GuiAppManager() {
-    global CONFIG, AppMgr
-
-    AppMgr.gui := Gui("+AlwaysOnTop", "Browser App Manager")
-
-    lv := AppMgr.gui.AddListView("w520 r10", ["App", "⭐", "Hotkey", "Browser"])
-
-    for app in CONFIG["apps"] {
-        stars := ""
-        Loop app["memory"]
-            stars .= "⭐"
-
-        lv.Add(
-            "",
-            app["name"],
-            stars,
-            app["hotkey"],
-            app["browser"],
-            app["aumid"],
-        )
-    }
-
-
-    btnGen := AppMgr.gui.AddButton("x10 y+10 w120", "生成 App")
-    btnDel := AppMgr.gui.AddButton("x+10 w120", "删除 App")
-
-    btnGen.OnEvent("Click", (*) => GenerateSelected(lv))
-    btnDel.OnEvent("Click", (*) => DeleteSelected(lv))
-
-    AppMgr.gui.Show()
-}
-
-
-; ==========================
-; 生成 / 删除
-; ==========================
-GenerateSelected(lv) {
-    row := lv.GetNext()
-    if !row
-        return
-
-    app := CONFIG["apps"][row]
-    CreateChromeApp(app)
-}
-
-DeleteSelected(lv) {
-    row := lv.GetNext()
-    if !row
-        return
-
-    app := CONFIG["apps"][row]
-    file := APP_DIR "\run_" app["name"] ".ps1"
-    isDelete := DeleteWithTrayTip(file)
-    if (isDelete) {
-        file := APP_DIR "\" app["name"] ".lnk"
-        DeleteWithTrayTip(file)
-    }
-}
-DeleteWithTrayTip(file) {
-    if !FileExist(file)
-        return false
-
-    try {
-        FileDelete(file)
-        SplitPath(file, &name)
-        TrayTip("文件已删除", name)
-        return true
-    } catch Error as e {
-        TrayTip("删除失败", e.Message)
-        return false
-    }
-}
-
-; ==========================
-; 生成 CMD
-; ==========================
-GenerateApp(app) {
-    global CONFIG, APP_DIR
-
-    DirCreate(APP_DIR)
-
-    browser := CONFIG["browsers"][app["browser"]]
-    args := StrJoin(" ", CONFIG["commonArgs"])
-
-    cmd := Format(
-        '"{}" --profile-directory={} --app={} {}',
-        browser["path"],
-        browser["profile"],
-        app["url"],
-        args
-    )
-
-    file := APP_DIR "\run_" app["name"] ".cmd"
-    if FileExist(file) {
-        FileDelete(file)
-    }
-    FileAppend(cmd, file, "UTF-8")
-}
-BuildChromeArgs(app) {
-    global CONFIG
-
-    browser := CONFIG["browsers"][app["browser"]]
-
-    args := []
-    args.Push("--profile-directory=" browser["profile"])
-    args.Push("--app=" app["url"])
-
-    ; 合并 commonArgs
-    for a in CONFIG["commonArgs"]
-        args.Push(a)
-
-    return StrJoin(" ", args)
-}
-
-CreateChromeApp(app) {
-    global CONFIG
-
-
-    browser := CONFIG["browsers"][app["browser"]]
-    chromeArgs := BuildChromeArgs(app)
-
-    ps := Format(("$Target = '{1}'`n"
-    "$Arguments   = '{2}'`n"
-    "$Lnk    = '{3}'`n"
-    "$AUMID  = '{4}'`n`n"
-
-    "$Wsh = New-Object -ComObject WScript.Shell`n"
-    "$S = $Wsh.CreateShortcut($Lnk)`n"
-    "$S.TargetPath = $Target`n"
-    "$S.Arguments  = $Arguments`n"
-    "$S.IconLocation = `"$Target,0`"`n"
-    "$S.WorkingDirectory = Split-Path $Target`n"
-    "$S.Save()`n`n"
-
-    "$bytes = [System.Text.Encoding]::Unicode.GetBytes(`"`0$AUMID`")`n"
-    "$stream = [System.IO.File]::Open($Lnk, 'Open', 'ReadWrite')`n"
-    "$stream.Seek(0x800, 'Begin') | Out-Null`n"
-    "$stream.Write($bytes, 0, $bytes.Length)`n"
-    "$stream.Close()"
-    ),
-    browser["path"], chromeArgs, APP_DIR "\" app["name"] ".lnk", app["aumid"]
-    )
-
-
-    file :=  APP_DIR "\run_" app["name"] ".ps1"
-    isCreate := CreateWithTrayTip(ps, file, "UTF-8")
-    if (isCreate) {
-        RunWait 'powershell -NoProfile -ExecutionPolicy Bypass -File "' file '"', , "Hide"
-        TrayTip("点击" app["hotkey"] "按键可激活" app["name"])
-
-    }
-}
-
-CreateWithTrayTip(ps, file, encode) {
-    try {
-        if FileExist(file) {
-            FileDelete(file)
-        }
-        FileAppend(ps, file, encode)
-        SplitPath(file, &name)
-        TrayTip("文件创建成功", name)
-        return true
-    } catch Error as e {
-        TrayTip("文件创建失败", e.Message)
-        return false
-    }
-}
-; ==========================
-; JSON 读取
-; ==========================
-; 读取 JSON 文件
-
-LoadConfig() {
-    json := FileRead(A_ScriptDir "\browser_apps.json", "UTF-8")
-    /* app := Jxon_Load(json)
-    MsgBox(app)
-    */
-
-    return Jxon_Load(json)
-}
-
-
-; 示例访问第一个 App
-;~ url := CONFIG["apps"][1].url
-;~ MsgBox("第一个 App URL: " url)
-
-; 遍历所有 App，添加热键
-for app in CONFIG["apps"] {
-    Hotkey app["hotkey"], BindActivateApp(app)
-}
-
-BindActivateApp(app) {
-    return (*) => ActivateApp(app)
-}
-
-; Win + 0热键打开chrome app
-#0::
-{
-	BuildBrowserCache()
-}
-BuildBrowserCache() {
-    global hwndCache
-    hwndCache.Clear()
-
-    ; 获取所有 chrome.exe 句柄
-    ids := WinGetList("ahk_exe chrome.exe")
-
-
-    for hwnd in ids {
-        ; 1. 过滤掉没有标题的隐藏窗口（Chrome 后台进程）
-        title := WinGetTitle("ahk_id " hwnd)
-        if (title == "")
-            continue
-
-        ;~ ToolTip title
-        ; 2. 识别是否为 App 窗口
-        try {
-            ; 很多版本的 UIA_Browser 在创建时会自动 WinActivate
-            cUIA := UIA_Browser("ahk_id " hwnd)
-
-			; 优先尝试 UIA 属性获取，若失败则用 JS 保底
-            url := cUIA.GetCurrentURL(false)
-            if (url == "" || url == "https://") {
-                url := cUIA.JSExecute("window.location.href")
-            }
-
-
-            url := Trim(url, " `"")
-            if (InStr(url, "https://chatgpt.com")) {
-				; chatgpt和dms两个PWA，存入缓存
-                hwndCache["chatgpt"] := hwnd
-			} else if (InStr(url, "https://dms.aliyun.com")) {
-                hwndCache["dms"] := hwnd
-            } else {
-                 ; 激活chrome浏览器窗口
-                WinActivate(hwnd) ; 瞬间切回，尽量减少干扰
-            }
-
-            ;~ 解除引用，AHK 的引用计数机制会自动释放这些 COM 对象
-			cUIA := ""
-
-        } catch {
-            continue
-        }
-    }
-	;~ DumpMap(hwndCache)
-}
-
-DumpMap(hwndCache) {
-    i := 1
-    out := ""
-    for url, hwnd in hwndCache {
-        out .= i ".key:`n" url "`nvalue:`n" hwnd "`n`n"
-        i++
-    }
-
-	local _gui := Gui("+AlwaysOnTop", "Dump")
-    _gui.AddEdit("w400 h300 ReadOnly", out)
-    _gui.Show()
-}
-
-ActivateApp(app) {
-    global hwndCache
-
-    exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
-
-    targetURL := app["url"]
-   if (InStr(targetURL, "https://chatgpt.com")) {
-        targetURL := "chatgpt"
-    } else if (InStr(targetURL, "https://dms.aliyun.com")) {
-        targetURL := "dms"
-    }
-
-    ; 精准匹配 URL
-    if hwndCache.Has(targetURL) {
-        ahk_id := hwndCache[targetURL]
-        if !WinExist("ahk_id " ahk_id) {
-            ; 窗口已关闭，重建缓存
-            BuildBrowserCache()
-            if hwndCache.Has(targetURL) {
-                ahk_id := hwndCache[targetURL]
-            } else {
-                return
-            }
-        }
-        if WinActive("ahk_id " ahk_id) {
-            WinMinimize("ahk_id " ahk_id)
-        } else {
-            WinActivate("ahk_id " ahk_id)
-        }
-        return
-    }
-    ; 2️找不到 → 启动 App 并等待窗口出现，并且重建缓存
-    Run APP_DIR "\" app["name"] ".lnk"
-    winTitle := app["title"]
-    if WinWait(winTitle " ahk_exe " exe,, 5) {
-        BuildBrowserCache()
-        if hwndCache.Has(targetURL) {
-            ahk_id := hwndCache[targetURL]
-            WinActivate("ahk_id " ahk_id)
-        } else {
-            WinActivate(winTitle)
-        }
-    }
-}
+; DumpMap / ActivateApp 已迁移至 ChromeAppMgr.ahk
 
 ; Win + `热键打开Obsidian
 #`::
@@ -2046,8 +1154,6 @@ ActivateApp(app) {
         MsgBox "当前没有打开的文章标签页"
         ExitApp
     }
-
-    ;~ results := "抓取结果：`n----------------`n"
 
     ; 3. 遍历每个标签页并执行“右键复制”
     for item in tabs {
@@ -2146,15 +1252,12 @@ AddNoteToObsidian(parentDir,noteName,content) {
     }
 }
 
-;~ !`::Send "#{Space}"
-;~ ; Alt + ` → 系统切换输入法（最稳）
 !`::{
-    ;~ SendEvent "{LWin down}{Space}{LWin up}"
 
     ; 添加笔记到obsidian
     parentDir := "笔记" ; 目录名
     noteName := FormatTime(, "yyyy-MM-dd") ; 文件名
-    ;~ content 为笔记内容
+    ; content 为笔记内容
     AddNoteToObsidian(parentDir,noteName,A_Clipboard)
 
 }
