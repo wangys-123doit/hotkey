@@ -6,6 +6,7 @@
 - [get_line_number.ahk](file://get-source-panel-line-number/get_line_number.ahk)
 - [run_bridge.vbs](file://get-source-panel-line-number/run_bridge.vbs)
 - [package.json](file://get-source-panel-line-number/package.json)
+- [run_bridge.ps1](file://run_bridge.ps1)
 - [nvm-node-pnpm-setup-guide.md](file://nvm-node-pnpm-setup-guide.md)
 - [setup-node-pnpm-lite.ps1](file://setup-node-pnpm-lite.ps1)
 - [Jxon.ahk](file://lib/Jxon.ahk)
@@ -22,6 +23,9 @@
 - 新增智能端口探测和健康检查功能
 - 增强错误处理和超时机制
 - 完善UIA菜单交互功能
+- **新增**：智能缓存和自动恢复机制，包括lastResult缓存和连续失败跟踪
+- **新增**：MAX_FAILURES阈值控制和自动重启功能
+- **新增**：_cached和_restarting标记的响应格式
 
 ## 目录
 1. [简介](#简介)
@@ -47,6 +51,8 @@ Node.js桥接工具是一个基于AutoHotkey v2和Node.js的跨平台开发辅�
 - **智能健康检查**：内置端口探测和进程状态监控功能
 - **增强诊断功能**：提供完整的系统链路状态检查和故障排除工具
 - **多字段返回值**：支持同时获取行号、列号和文件URL的完整代码位置信息
+- **智能缓存机制**：提供lastResult缓存和连续失败跟踪，增强系统稳定性
+- **自动恢复功能**：在多次失败后自动重启，确保服务可用性
 
 ## 项目结构
 
@@ -60,6 +66,9 @@ README[README.md]
 Config[browser_apps.json]
 UIA[lib/UIA.ahk]
 UIABrowser[lib/UIA_Browser.ahk]
+RunBridgePS[run_bridge.ps1]
+NVMGuide[nvm-node-pnpm-setup-guide.md]
+Setup[setup-node-pnpm-lite.ps1]
 end
 subgraph "get-source-panel-line-number模块"
 Module[get-source-panel-line-number]
@@ -75,8 +84,9 @@ end
 Root --> Module
 Root --> UIA
 Root --> UIABrowser
+Root --> RunBridgePS
+Root --> NVMGuide
 Root --> Setup
-Root --> Guide
 Module --> BridgeJS
 Module --> AHKScript
 Module --> VBSRun
@@ -85,9 +95,10 @@ UIA --> UIABrowser
 ```
 
 **图表来源**
-- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
 - [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 
 **章节来源**
 - [README.md:1-2](file://README.md#L1-L2)
@@ -106,6 +117,9 @@ Node.js桥接服务是整个系统的核心组件，负责与Chrome DevTools进�
 5. **端口探测和健康检查**：内置智能的端口占用检测和进程状态监控
 6. **错误处理和恢复**：提供多层次的错误处理和自动恢复机制
 7. **多字段数据提取**：从DevTools内部获取行号、列号和文件URL信息
+8. **智能缓存管理**：维护lastResult缓存和连续失败计数
+9. **自动恢复机制**：在多次失败后自动重启服务
+10. **响应格式增强**：支持_cached和_restarting标记的响应格式
 
 ### AutoHotkey控制脚本 (get_line_number.ahk)
 
@@ -118,10 +132,20 @@ AutoHotkey脚本提供了用户友好的交互界面和自动化功能：
 5. **智能多字段解析**：提供正则表达式解析和错误处理，支持行号、列号和文件URL
 6. **超时和重试机制**：实现智能的超时处理和自动重试
 7. **增强的错误状态**：支持"Bridge Offline"、"Not in Source Panel"等详细错误状态
+8. **响应格式解析**：支持_cached和_restarting标记的响应格式
 
 ### VBS启动器 (run_bridge.vbs)
 
 轻量级的VBS启动器用于简化Node.js服务的启动过程，提供无窗口启动能力。
+
+### PowerShell启动器 (run_bridge.ps1)
+
+现代化的PowerShell启动器提供更强大的服务管理和健康检查功能：
+
+1. **健康检查集成**：自动检查现有服务的健康状态
+2. **智能启动逻辑**：避免重复启动已运行的服务
+3. **错误处理**：提供详细的错误信息和诊断
+4. **跨平台兼容**：支持不同环境下的Node.js执行
 
 ### UIA浏览器自动化 (UIA_Browser.ahk)
 
@@ -132,9 +156,10 @@ AutoHotkey脚本提供了用户友好的交互界面和自动化功能：
 - 增强的菜单交互和导航能力
 
 **章节来源**
-- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
 - [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)
 
 ## 架构概览
@@ -147,6 +172,7 @@ subgraph "用户界面层"
 AHK[AutoHotkey脚本]
 User[开发者]
 UIA[UIA浏览器自动化]
+PS[PowerShell启动器]
 end
 subgraph "应用服务层"
 AHKService[AHK服务管理器]
@@ -154,6 +180,8 @@ HTTPServer[HTTP服务器]
 HealthChecker[健康检查器]
 PortProbe[端口探测器]
 Diagnostic[诊断工具]
+CacheManager[缓存管理器]
+RecoveryMechanism[恢复机制]
 end
 subgraph "桥接层"
 CDPServer[Chrome DevTools服务]
@@ -166,6 +194,8 @@ Chrome[Chrome浏览器]
 NodeJS[Node.js运行时]
 FileSystem[文件系统]
 ProcessManager[进程管理器]
+CacheStorage[缓存存储]
+FailureTracker[失败跟踪器]
 end
 User --> AHK
 AHK --> AHKService
@@ -183,6 +213,11 @@ AHKService --> NodeJS
 NodeJS --> FileSystem
 MultiFieldParser --> AHKService
 Diagnostic --> AHKService
+CacheManager --> CacheStorage
+CacheManager --> FailureTracker
+RecoveryMechanism --> ProcessManager
+CacheManager --> HTTPServer
+RecoveryMechanism --> HTTPServer
 style AHK fill:#e1f5fe
 style HTTPServer fill:#f3e5f5
 style CDPServer fill:#e8f5e8
@@ -195,6 +230,53 @@ style HealthChecker fill:#fff3e0
 - [get_line_number.ahk:15-66](file://get-source-panel-line-number/get_line_number.ahk#L15-L66)
 
 ## 详细组件分析
+
+### 智能缓存和自动恢复机制
+
+**新增功能**：系统现在包含智能缓存和自动恢复机制，显著提升了系统的稳定性和用户体验。
+
+#### 缓存管理器
+系统维护两个关键的缓存状态：
+- `lastResult`：保存最后一次成功的查询结果
+- `consecutiveFailures`：跟踪连续失败的次数
+- `MAX_FAILURES`：定义自动重启的阈值（默认为3次）
+
+#### 缓存策略
+```mermaid
+flowchart TD
+Start([开始查询]) --> CheckCDP["CDP查询结果"]
+CheckCDP --> Success{"CDP返回成功？"}
+Success --> |是| UpdateCache["更新lastResult缓存"]
+UpdateCache --> ResetCounter["重置失败计数器"]
+ResetCounter --> ReturnSuccess["返回成功结果"]
+Success --> |否| CheckFailures["检查连续失败次数"]
+CheckFailures --> FailuresBelowMax{"失败次数 < MAX_FAILURES？"}
+FailuresBelowMax --> |是| CheckLastResult["检查lastResult缓存"]
+CheckLastResult --> HasLastResult{"有lastResult？"}
+HasLastResult --> |是| ReturnCached["返回缓存结果_cached标记"]
+HasLastResult --> |否| ReturnZero["返回零值"]
+FailuresBelowMax --> |否| CheckLastResult2["检查lastResult缓存"]
+CheckLastResult2 --> HasLastResult2{"有lastResult？"}
+HasLastResult2 --> |是| ReturnFallback["返回缓存结果并标记_restarting"]
+HasLastResult2 --> |否| RestartService["标记_restarting并重启服务"]
+ReturnSuccess --> End([结束])
+ReturnCached --> End
+ReturnZero --> End
+ReturnFallback --> RestartService
+RestartService --> End
+```
+
+**图表来源**
+- [bridge.js:7-10](file://get-source-panel-line-number/bridge.js#L7-L10)
+- [bridge.js:88-99](file://get-source-panel-line-number/bridge.js#L88-L99)
+- [bridge.js:101-105](file://get-source-panel-line-number/bridge.js#L101-L105)
+
+#### 自动恢复机制
+当连续失败达到阈值时，系统会自动执行以下恢复流程：
+1. 标记响应为`_restarting: true`
+2. 返回最近一次的成功结果
+3. 在100毫秒后优雅地退出进程
+4. 允许系统重新启动一个新的服务实例
 
 ### Chrome远程接口集成
 
@@ -236,7 +318,9 @@ CDP->>JS : 执行多字段获取代码
 JS->>CDP : 查询编辑器状态和文件URL
 CDP-->>JS : 返回行号、列号、文件URL数据
 JS-->>Node : 返回执行结果
-Node-->>HTTP : 返回JSON响应
+Node->>CacheManager : 更新缓存状态
+CacheManager->>Node : 返回缓存策略决策
+Node-->>HTTP : 返回JSON响应含缓存标记
 HTTP-->>AHK : 返回多字段位置信息
 AHK-->>User : 显示完整代码位置结果
 ```
@@ -258,6 +342,8 @@ HTTP GET请求到`/line-number`端点，无需额外的请求头或参数。
 - `columnNumber`: 当前行号对应的列号（数字类型）
 - `fileUrl`: 当前编辑文件的完整URL（字符串类型）
 - `error`: 错误信息（字符串类型，仅在发生错误时存在）
+- `_cached`: 缓存标记（布尔类型，仅在使用缓存时存在）
+- `_restarting`: 自动重启标记（布尔类型，仅在服务重启时存在）
 
 #### 错误处理策略
 系统实现了多层次的错误处理机制：
@@ -265,6 +351,7 @@ HTTP GET请求到`/line-number`端点，无需额外的请求头或参数。
 - JavaScript执行失败：捕获并返回异常详情
 - 网络连接问题：提供超时和连接失败的反馈
 - **新增**：多字段解析失败的详细错误状态
+- **新增**：缓存失效时的降级处理
 
 ### 端口探测和健康检查功能
 
@@ -295,6 +382,7 @@ ServerStarted --> End
 - 返回服务运行状态
 - 包含进程ID信息
 - 支持快速服务可用性验证
+- **新增**：PowerShell启动器的健康检查集成
 
 ### AutoHotkey与Node.js通信协议
 
@@ -311,6 +399,7 @@ AutoHotkey与Node.js之间的通信基于标准的HTTP协议，具有以下特�
 2. **处理阶段**：Node.js服务接收并处理请求
 3. **响应阶段**：Node.js返回JSON格式的响应
 4. **解析阶段**：AutoHotkey解析响应并提取多字段信息
+5. **缓存标记处理**：识别_cached和_restarting标记
 
 #### 超时和重试机制
 系统实现了智能的超时处理：
@@ -379,6 +468,33 @@ VBS脚本虽然简单，但在系统启动过程中发挥着重要作用：
 - **窗口模式**：0表示隐藏窗口
 - **等待标志**：False表示非阻塞启动
 
+### PowerShell启动器功能
+
+**新增功能**：PowerShell启动器提供了更强大的服务管理能力：
+
+#### 智能启动逻辑
+```mermaid
+flowchart TD
+Start([启动PowerShell脚本]) --> CheckHealth["检查健康端点"]
+CheckHealth --> Healthy{"服务健康？"}
+Healthy --> |是| AlreadyRunning["服务已在运行"]
+AlreadyRunning --> Exit([退出])
+Healthy --> |否| CheckNode["检查Node.js可用性"]
+CheckNode --> NodeAvailable{"Node.js可用？"}
+NodeAvailable --> |是| StartBridge["启动bridge.js"]
+NodeAvailable --> |否| Error["输出错误信息"]
+StartBridge --> End([结束])
+Error --> End
+```
+
+**图表来源**
+- [run_bridge.ps1:11-25](file://run_bridge.ps1#L11-L25)
+
+#### 健康检查集成
+- **自动健康检查**：启动前检查现有服务状态
+- **错误处理**：提供详细的错误诊断
+- **跨平台支持**：支持不同环境下的Node.js执行
+
 ### UIA菜单交互功能
 
 **增强功能**：系统集成了Microsoft UI Automation框架，提供更丰富的菜单交互能力：
@@ -413,7 +529,9 @@ Start([开始诊断]) --> CheckChrome["检查Chrome进程"]
 CheckChrome --> CheckPort["检查9222端口"]
 CheckPort --> CheckBridge["检查Node.js服务"]
 CheckBridge --> CheckHealth["检查健康检查端点"]
-CheckHealth --> Report["生成诊断报告"]
+CheckHealth --> CheckCache["检查缓存状态"]
+CheckCache --> CheckRecovery["检查恢复机制"]
+CheckRecovery --> Report["生成诊断报告"]
 Report --> End([结束])
 CheckChrome --> ChromeOK{"Chrome运行？"}
 CheckChrome --> ChromeFail["Chrome未运行"]
@@ -423,6 +541,10 @@ CheckBridge --> BridgeOK{"服务在线？"}
 CheckBridge --> BridgeFail["服务离线"]
 CheckHealth --> HealthOK{"健康检查通过？"}
 CheckHealth --> HealthFail["健康检查失败"]
+CheckCache --> CacheOK{"缓存正常？"}
+CheckCache --> CacheFail["缓存异常"]
+CheckRecovery --> RecoveryOK{"恢复机制正常？"}
+CheckRecovery --> RecoveryFail["恢复机制异常"]
 ```
 
 **图表来源**
@@ -436,6 +558,8 @@ CheckHealth --> HealthFail["健康检查失败"]
 3. **网络环境验证**：检查本地网络连通性
 4. **文件系统验证**：检查脚本文件的可访问性
 5. **UIA框架验证**：检查UI Automation支持
+6. **缓存状态验证**：检查lastResult缓存有效性
+7. **恢复机制验证**：检查自动重启功能
 
 #### 增强的错误处理
 - **智能超时处理**：1秒超时限制
@@ -447,12 +571,16 @@ CheckHealth --> HealthFail["健康检查失败"]
   - `"Not in Source Panel"`：当前不在源码面板
   - `"Bridge Offline"`：Node.js服务离线
   - `"DevTools not open"`：DevTools窗口未打开
+- **缓存状态标识**：
+  - `"cached": true`：使用缓存数据
+  - `"restarting": true`：服务正在重启
 - **健康检查集成**：`/health`端点提供进程状态
 
 **章节来源**
-- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
 - [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)
 
 ## 依赖分析
@@ -476,18 +604,26 @@ Health[健康检查器]
 PortProbe[端口探测器]
 MultiFieldParser[多字段解析器]
 Diagnostic[诊断工具]
+CacheManager[缓存管理器]
+RecoveryMechanism[恢复机制]
+FailureTracker[失败跟踪器]
 end
 Bridge --> Service
 Bridge --> Connector
 Bridge --> Health
 Bridge --> PortProbe
+Bridge --> CacheManager
+Bridge --> RecoveryMechanism
 Connector --> CDP
 Service --> HTTP
 Connector --> FS
 Health --> HTTP
 PortProbe --> HTTP
+CacheManager --> Bridge
+RecoveryMechanism --> Bridge
 MultiFieldParser --> Bridge
 Diagnostic --> Bridge
+FailureTracker --> CacheManager
 ```
 
 **图表来源**
@@ -515,11 +651,13 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - **版本要求**：Node.js 14.x及以上版本
 - **包管理器**：npm或pnpm
 - **权限要求**：需要访问Chrome调试端口
+- **新增**：PowerShell执行策略要求
 
 #### Windows环境
 - **操作系统**：Windows 7/8/10/11
 - **浏览器支持**：Chrome 62+或同等版本的浏览器
 - **网络权限**：需要本地网络访问权限
+- **UIA支持**：需要支持UI Automation的Windows版本
 
 #### UIA框架依赖
 - **Windows版本**：需要支持UI Automation的Windows版本
@@ -547,11 +685,13 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - JavaScript执行在DevTools内部完成，减少数据传输
 - 缓存机制避免重复的DevTools连接建立
 - **新增**：多字段数据的高效提取和序列化
+- **新增**：智能缓存策略减少不必要的查询
 
 #### 端口探测优化
 - 异步端口检查避免阻塞主流程
 - 超时机制防止无限等待
 - 健康检查结果缓存减少重复检查
+- **新增**：PowerShell启动器的快速健康检查
 
 ### 并发处理能力
 
@@ -577,8 +717,17 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 #### 数据传输优化
 - **更新**：JSON响应的最小化
 - **新增**：多字段数据的紧凑序列化
+- **新增**：缓存标记的轻量级表示
 - 二进制数据的避免
 - 压缩传输的考虑
+
+### 缓存性能优化
+
+**新增优化**：智能缓存系统的性能优化措施：
+- 缓存数据的快速访问
+- 失败计数器的原子操作
+- 自动重启的延迟处理
+- 缓存失效的渐进式降级
 
 ### UIA性能优化
 
@@ -619,6 +768,7 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 2. 检查package.json依赖安装
 3. 确认文件路径的正确性
 4. 查看详细的错误日志
+5. **新增**：检查PowerShell执行策略设置
 
 #### DevTools连接失败
 
@@ -648,6 +798,20 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 3. 清理残留的Node.js进程
 4. 重新启动服务
 
+#### 缓存失效问题
+
+**症状**：系统返回缓存数据而非实时数据
+**原因分析**：
+- lastResult缓存过期
+- 连续失败计数器未重置
+- 缓存标记未正确处理
+
+**解决步骤**：
+1. 检查lastResult缓存的有效性
+2. 验证连续失败计数器的状态
+3. 确认缓存标记的正确处理
+4. 手动清除缓存并重启服务
+
 ### 诊断工具使用
 
 系统内置了完整的诊断工具，帮助用户快速定位问题：
@@ -659,7 +823,9 @@ Start([开始诊断]) --> CheckChrome["检查Chrome进程"]
 CheckChrome --> CheckPort["检查9222端口"]
 CheckPort --> CheckBridge["检查Node.js服务"]
 CheckBridge --> CheckHealth["检查健康检查端点"]
-CheckHealth --> Report["生成诊断报告"]
+CheckHealth --> CheckCache["检查缓存状态"]
+CheckCache --> CheckRecovery["检查恢复机制"]
+CheckRecovery --> Report["生成诊断报告"]
 Report --> End([结束])
 CheckChrome --> ChromeOK{"Chrome运行？"}
 CheckChrome --> ChromeFail["Chrome未运行"]
@@ -669,6 +835,10 @@ CheckBridge --> BridgeOK{"服务在线？"}
 CheckBridge --> BridgeFail["服务离线"]
 CheckHealth --> HealthOK{"健康检查通过？"}
 CheckHealth --> HealthFail["健康检查失败"]
+CheckCache --> CacheOK{"缓存正常？"}
+CheckCache --> CacheFail["缓存异常"]
+CheckRecovery --> RecoveryOK{"恢复机制正常？"}
+CheckRecovery --> RecoveryFail["恢复机制异常"]
 ```
 
 **图表来源**
@@ -683,6 +853,9 @@ CheckHealth --> HealthFail["健康检查失败"]
 3. **网络环境验证**：检查本地网络连通性
 4. **文件系统验证**：检查脚本文件的可访问性
 5. **UIA框架验证**：检查UI Automation支持
+6. **缓存状态验证**：检查lastResult缓存有效性
+7. **恢复机制验证**：检查自动重启功能
+8. **PowerShell环境验证**：检查执行策略和权限
 
 ### 日志记录和监控
 
@@ -693,18 +866,21 @@ CheckHealth --> HealthFail["健康检查失败"]
 - 时间戳记录
 - 操作上下文信息
 - **新增**：多字段解析错误的详细记录
+- **新增**：缓存失效和恢复的日志
 
 #### 性能日志
 - 响应时间统计
 - 资源使用情况
 - 并发访问监控
 - **新增**：多字段数据提取性能监控
+- **新增**：缓存命中率统计
 
 #### 用户操作日志
 - 热键触发记录
 - 功能使用统计
 - 错误发生频率
 - **新增**：多字段获取成功率统计
+- **新增**：缓存使用情况统计
 
 #### 健康检查日志
 **新增功能**：系统记录健康检查和端口探测的结果：
@@ -712,6 +888,8 @@ CheckHealth --> HealthFail["健康检查失败"]
 - 进程状态变化
 - 服务重启历史
 - **新增**：多字段数据提取成功率
+- **新增**：缓存有效性监控
+- **新增**：自动恢复机制使用统计
 
 **章节来源**
 - [get_line_number.ahk:132-159](file://get-source-panel-line-number/get_line_number.ahk#L132-L159)
@@ -720,7 +898,7 @@ CheckHealth --> HealthFail["健康检查失败"]
 
 ## 结论
 
-Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功地解决了从Chrome DevTools获取源码面板行号这一复杂的技术挑战。**更新**：该系统现已升级为多字段代码位置获取工具，提供了更加丰富和实用的功能。
+Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功地解决了从Chrome DevTools获取源码面板行号这一复杂的技术挑战。**更新**：该系统现已升级为多字段代码位置获取工具，提供了更加丰富和实用的功能，并且增强了智能缓存和自动恢复机制。
 
 ### 技ological创新性
 - **深度集成**：直接利用DevTools内部API，避免了传统方法的局限性
@@ -730,6 +908,9 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **UIA集成**：提供丰富的浏览器自动化能力
 - **增强诊断功能**：完整的系统链路检查和故障排除工具
 - **多字段支持**：同时获取行号、列号和文件URL的完整代码位置信息
+- **智能缓存系统**：lastResult缓存和连续失败跟踪机制
+- **自动恢复功能**：MAX_FAILURES阈值控制和自动重启能力
+- **响应格式增强**：支持_cached和_restarting标记的响应格式
 
 ### 用户体验优化
 - **简单易用**：通过热键绑定提供一键式操作
@@ -738,6 +919,7 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **多浏览器支持**：通过UIA框架支持多种浏览器
 - **智能多字段解析**：提供正则表达式解析和错误处理
 - **详细错误状态**：提供"Bridge Offline"、"Not in Source Panel"等详细错误信息
+- **缓存透明化**：用户可以清楚地看到缓存使用的状态
 
 ### 扩展性设计
 - **模块化架构**：清晰的职责分离便于维护和扩展
@@ -746,8 +928,10 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **UIA框架**：提供强大的浏览器自动化基础
 - **智能超时处理**：1秒超时限制和自动重试机制
 - **多字段数据结构**：支持未来更多的代码位置信息扩展
+- **缓存策略可配置**：MAX_FAILURES阈值可调整
+- **恢复机制可监控**：自动重启过程可追踪
 
-该工具不仅解决了具体的开发需求，更重要的是展示了一种将现代Web技术与传统桌面应用相结合的有效模式，为类似的技术集成项目提供了宝贵的参考经验。
+该工具不仅解决了具体的开发需求，更重要的是展示了一种将现代Web技术与传统桌面应用相结合的有效模式，为类似的技术集成项目提供了宝贵的参考经验。**新增的智能缓存和自动恢复机制进一步提升了系统的稳定性和用户体验，使其成为了一个真正可靠的开发辅助工具。**
 
 ## 附录
 
@@ -758,6 +942,7 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 2. **Chrome配置**：确保Chrome浏览器已正确安装
 3. **权限设置**：确保脚本有足够的系统权限
 4. **UIA支持**：确保Windows版本支持UI Automation
+5. **PowerShell配置**：确保PowerShell执行策略允许脚本运行
 
 #### 依赖安装
 ```bash
@@ -777,6 +962,7 @@ npm list chrome-remote-interface
 - `REMOTE_PORT`：Chrome调试端口号
 - `BRIDGE_URL`：Node.js服务URL
 - `NODE_SCRIPT`：Node.js脚本路径
+- **新增**：`MAX_FAILURES`：自动重启阈值（默认3）
 
 ### 使用示例
 
@@ -793,6 +979,8 @@ npm list chrome-remote-interface
 - **UIA自动化**：利用UIA框架进行复杂的浏览器操作
 - **系统诊断**：使用Ctrl+F12热键进行全面的系统状态检查
 - **多字段分析**：利用完整的代码位置信息进行代码分析和统计
+- **缓存监控**：观察_cached标记判断数据来源
+- **恢复机制**：观察_restarting标记判断服务状态
 
 ### 维护和更新
 
@@ -801,12 +989,14 @@ npm list chrome-remote-interface
 - **Node.js版本**：支持Node.js 14.x及以上版本
 - **AutoHotkey版本**：支持AutoHotkey v2.0及以上版本
 - **Windows版本**：支持Windows 7/8/10/11
+- **PowerShell版本**：支持PowerShell 5.0及以上版本
 
 #### 安全考虑
 - **权限控制**：限制对系统资源的访问
 - **输入验证**：对所有外部输入进行验证
 - **错误隔离**：防止单点故障影响整体系统
 - **UIA权限**：确保适当的无障碍访问权限
+- **缓存安全**：防止缓存数据被恶意篡改
 
 #### 性能监控
 - **定期健康检查**：监控服务运行状态
@@ -814,10 +1004,20 @@ npm list chrome-remote-interface
 - **错误率监控**：跟踪服务错误发生频率
 - **用户行为分析**：分析功能使用模式
 - **多字段解析性能监控**：跟踪多字段数据提取效率
+- **缓存性能监控**：跟踪缓存命中率和失效率
+- **恢复机制监控**：跟踪自动重启频率和成功率
+- **响应时间监控**：跟踪平均响应时间和峰值响应时间
+
+#### 缓存配置优化
+- **MAX_FAILURES调整**：根据网络环境调整自动重启阈值
+- **缓存清理策略**：定期清理过期的缓存数据
+- **内存使用优化**：监控缓存占用的内存大小
+- **性能影响评估**：评估缓存对系统性能的影响
 
 **章节来源**
-- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
 - [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
+- [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)

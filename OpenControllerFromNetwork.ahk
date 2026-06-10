@@ -171,15 +171,57 @@ RCtrl Up:: {
 global g_cachedChromeHwnd := 0
 ; 全局缓存：调试端口状态 [ready, tick]（避免每次 HTTP 请求）
 global g_debugPortCache := Map()
+; 全局缓存：PWA 进程 PID 集合（避免重复查询）
+global g_pwaPids := Map()
+global g_pwaPidsTick := 0
+
+; 获取进程的命令行参数（不使用 WMI，通过 NtQueryInformationProcess 读取）
+GetProcessCommandLine(pid) {
+    try {
+        hProcess := DllCall("OpenProcess", "UInt", 0x1010, "Int", 0, "UInt", pid, "Ptr")  ; PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ
+        if !hProcess
+            return ""
+        buf := Buffer(32768, 0)  ; UNICODE_STRING 最大 32K
+        ; ProcessCommandLineInformation = 60
+        status := DllCall("ntdll\NtQueryInformationProcess", "Ptr", hProcess, "UInt", 60, "Ptr", buf, "UInt", buf.Size, "UInt*", 0, "UInt")
+        DllCall("CloseHandle", "Ptr", hProcess)
+        if (status = 0) {
+            ; UNICODE_STRING: Length(2) + MaxLength(2) + Buffer(8)
+            strLen := NumGet(buf, 0, "UShort")
+            strPtr := NumGet(buf, A_PtrSize == 8 ? 8 : 4, "Ptr")
+            if (strLen > 0 && strPtr)
+                return StrGet(strPtr, strLen // 2, "UTF-16")
+        }
+        return ""
+    } catch
+        return ""
+}
+
+; 判断进程是否为 PWA（命令行包含 --app=）
+IsPwaProcess(pid) {
+    global g_pwaPids, g_pwaPidsTick
+    if g_pwaPids.Has(pid)
+        return g_pwaPids[pid]
+
+    ; 检查缓存是否过期（60秒 TTL）
+    if (A_TickCount - g_pwaPidsTick > 60000) {
+        g_pwaPids := Map()
+        g_pwaPidsTick := A_TickCount
+    }
+
+    cmdLine := GetProcessCommandLine(pid)
+    isPwa := InStr(cmdLine, "--app=") > 0
+    g_pwaPids[pid] := isPwa
+    return isPwa
+}
 
 ; 获取当前虚拟桌面的 Chrome 窗口句柄
-; Windows 10/11 将不在当前桌面的窗口标记为 cloaked（隐藏），通过 DwmGetWindowAttribute 检测
-; DWMWA_CLOAKED = 14，输出值为 BOOL（4 字节 int），非 0 表示窗口被隐藏（不在当前桌面）
 ; 返回：hwnd（找到）或 0（未找到）
-; ★ 优化：缓存 hwnd，快速路径仅验证窗口存在+未cloaked（<1ms），慢路径才走WMI
+; ★ 快速路径：缓存验证 <1ms；慢路径：WinGetList + 排除 PWA + DWMWA_CLOAKED
 GetChromeHwndOnCurrentDesktop() {
     global g_cachedChromeHwnd
-    ; ★ 快速路径：验证缓存（WinExist + DllCall，<1ms）
+
+    ; ★ 快速路径：验证缓存（WinExist + DwmGetWindowAttribute，<1ms）
     if g_cachedChromeHwnd && WinExist("ahk_id " g_cachedChromeHwnd) {
         buf := Buffer(4, 0)
         hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", g_cachedChromeHwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
@@ -188,39 +230,29 @@ GetChromeHwndOnCurrentDesktop() {
     }
     g_cachedChromeHwnd := 0
 
-    ; 慢路径：完整搜索（缓存未命中时才执行）
+    ; WinGetList 获取所有 Chrome 实例（包括所有虚拟桌面）
     chromeList := WinGetList("ahk_exe chrome.exe")
-
-    ; 构建PWA进程PID集合，用于排除PWA窗口（--app= 启动的Chrome实例）
-    pwaPids := Map()
-    try {
-        wmi := ComObject("WbemScripting.SWbemLocator").ConnectServer(".", "root\cimv2")
-        for proc in wmi.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE Name='chrome.exe' AND CommandLine LIKE '%--app=%'")
-            pwaPids[proc.ProcessId] := true
-    }
-
-    log := "GetChromeHwndOnCurrentDesktop (full search)`nChrome 窗口总数: " chromeList.Length "`n"
     for hwnd in chromeList {
-        buf := Buffer(4, 0)
-        hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
-        cloaked := NumGet(buf, 0, "Int")
+        ; 过滤无标题窗口（通知、托盘等）
         title := ""
         try title := WinGetTitle("ahk_id " hwnd)
+        if !title
+            continue
+
+        ; 排除 PWA 窗口（通过 NtQueryInformationProcess 检查 --app=）
         pid := 0
         try pid := WinGetPID("ahk_id " hwnd)
-        isPwa := pwaPids.Has(pid)
-        log .= "hwnd=" hwnd " cloaked=" cloaked " pwa=" isPwa " title=" SubStr(title, 1, 30) "`n"
-        if (hr = 0 && !cloaked && !isPwa) {
+        if IsPwaProcess(pid)
+            continue
+
+        ; DWMWA_CLOAKED: 非当前桌面的窗口 cloaked=1
+        buf := Buffer(4, 0)
+        hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
+        if (hr = 0 && !NumGet(buf, 0, "Int")) {
             g_cachedChromeHwnd := hwnd
-            log .= "→ 找到: " hwnd
-            ToolTip(log)
-            SetTimer () => ToolTip(), -3000
             return hwnd
         }
     }
-    log .= "→ 当前桌面无 Chrome 窗口"
-    ToolTip(log)
-    SetTimer () => ToolTip(), -3000
     return 0
 }
 
@@ -1429,7 +1461,7 @@ DevToolsUrlToLocalPath(url) {
 }
 
 ;~ 7、在编辑器中打开文件（虚拟桌面感知 + --reuse-window）
-; 流程：1. DWMWA_CLOAKED 检测当前桌面的编辑器窗口 → 2. 激活窗口 → 3. 延迟等待 Qoder IPC 注册 → 4. --reuse-window 打开文件
+; 流程：1. IVirtualDesktopManager 检测当前桌面的编辑器窗口 → 2. 激活窗口 → 3. 延迟等待 Qoder IPC 注册 → 4. --reuse-window 打开文件
 ; 关键：--reuse-window 复用"最近激活"的窗口，所以必须先激活当前桌面的窗口
 OpenInEditor(file, lineNum?, colNum?)
 {
@@ -1492,52 +1524,24 @@ OpenInEditor(file, lineNum?, colNum?)
 }
 
 ; 获取当前虚拟桌面上 Qoder 或 VS Code 的窗口句柄
-; 优先使用 IVirtualDesktopManager 精确匹配桌面 ID，回退到 DWMWA_CLOAKED 检测
+; 使用 DWMWA_CLOAKED 检测当前桌面窗口
 GetEditorHwndOnCurrentDesktop() {
-    currentDesktopId := GetCurrentVirtualDesktopId()
-    log := "[GetEditorHwndOnCurrentDesktop] currentDesktopId=" currentDesktopId "`n"
-
-    ; 优先找 Qoder，其次找 VS Code
     for exeName in ["Qoder.exe", "Code.exe"] {
         winList := WinGetList("ahk_exe " exeName)
-        log .= exeName " 窗口数: " winList.Length "`n"
         for hwnd in winList {
-            ; 方法1: 通过 IVirtualDesktopManager 精确匹配桌面 ID
-            if currentDesktopId {
-                winDesktopId := GetWindowDesktopId(hwnd)
-                try title := WinGetTitle("ahk_id " hwnd)
-                log .= "  hwnd=" hwnd " desktop=" winDesktopId " title=" SubStr(title, 1, 40) "`n"
-                if (winDesktopId && winDesktopId = currentDesktopId) {
-                    ; 过滤无标题窗口（如通知、托盘等）
-                    if title {
-                        log .= "  → 匹配当前桌面!"
-                        ToolTip(log)
-                        SetTimer(() => ToolTip(), -5000)
-                        return hwnd
-                    }
-                }
-            }
-            ; 方法2: 回退到 DWMWA_CLOAKED 检测
-            else {
-                buf := Buffer(4, 0)
-                hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
-                cloaked := NumGet(buf, 0, "Int")
-                try title := WinGetTitle("ahk_id " hwnd)
-                log .= "  hwnd=" hwnd " cloaked=" cloaked " title=" SubStr(title, 1, 40) "`n"
-                if (hr = 0 && !cloaked) {
-                    if title {
-                        log .= "  → CLOAKED匹配!"
-                        ToolTip(log)
-                        SetTimer(() => ToolTip(), -5000)
-                        return hwnd
-                    }
-                }
-            }
+            ; 过滤无标题窗口
+            title := ""
+            try title := WinGetTitle("ahk_id " hwnd)
+            if !title
+                continue
+            ; DWMWA_CLOAKED: 非当前桌面的窗口 cloaked=1
+            buf := Buffer(4, 0)
+            hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
+            cloaked := NumGet(buf, 0, "Int")
+            if (hr = 0 && !cloaked)
+                return hwnd
         }
     }
-    log .= "→ 未找到当前桌面的编辑器窗口"
-    ToolTip(log)
-    SetTimer(() => ToolTip(), -5000)
     return 0
 }
 

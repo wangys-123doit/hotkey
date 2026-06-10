@@ -1,19 +1,21 @@
 // DevTools panel → IDE file opener
 const CONFIG = {
-  SEARCH_KEY: 'localhost:3000',
-  AHK_LINE_URL: 'http://localhost:3000/line-number',
-  AHK_START_URL: 'http://localhost:3000/start-bridge',
-  AHK_TIMEOUT_MS: 1200
+  BRIDGE_URL: 'http://localhost:3000/line-number',
+  BRIDGE_START: 'http://localhost:3000/start-bridge',
+  TIMEOUT_MS: 1200
 };
 
 const tabId = chrome.devtools.inspectedWindow.tabId;
 let port = null;
 const state = { lastResource: null, lastLine: 1, lastCol: 1 };
 
+// ─── Port Connection ────────────────────────────────────────────
+
 function connectPort() {
   if (port) { try { port.disconnect(); } catch {} port = null; }
   try { port = chrome.runtime.connect({ name: 'devtools-vscode-opener' }); }
   catch { setTimeout(connectPort, 1000); return; }
+
   port.onMessage.addListener((msg) => {
     if (msg?.action === 'TRIGGER_OPEN') {
       const res = state.lastResource;
@@ -24,18 +26,9 @@ function connectPort() {
   port.postMessage({ action: 'INIT', tabId });
 }
 
-function decodeSafe(s) { try { return decodeURIComponent(s); } catch { return s; } }
+// ─── URL → Path Conversion ─────────────────────────────────────
 
-function isAllowedUrl(u, raw) {
-  const key = (CONFIG.SEARCH_KEY || '').trim();
-  if (!key) return true;
-  const noProto = key.replace(/^https?:\/\//i, '');
-  const hostPort = noProto.split('/')[0] || '';
-  const hostOnly = hostPort.split(':')[0];
-  if (hostOnly && u.hostname === hostOnly) return true;
-  if (hostPort && u.host === hostPort) return true;
-  return u.href.includes(key) || raw.includes(key);
-}
+function decodeSafe(s) { try { return decodeURIComponent(s); } catch { return s; } }
 
 function toOpenPath(url) {
   if (!url) return '';
@@ -51,14 +44,13 @@ function toOpenPath(url) {
   }
   try {
     const u = new URL(raw);
-    if (!isAllowedUrl(u, raw)) return '';
     let p = decodeSafe(u.pathname || '');
     if (p.startsWith('/@fs/')) return p.slice('/@fs/'.length).replace(/\\/g, '/');
     return p.replace(/^[/]/, '').replace(/\\/g, '/');
   } catch { return ''; }
 }
 
-// ─── AHK Bridge (CDP → DevTools 内部光标位置) ─────────────────
+// ─── CDP Bridge ─────────────────────────────────────────────────
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -70,21 +62,18 @@ async function fetchWithTimeout(url, timeoutMs) {
 }
 
 async function ensureBridgeRunning() {
-  const lineUrl = (CONFIG.AHK_LINE_URL || '').trim();
-  if (!lineUrl) return false;
-  const ms = Number(CONFIG.AHK_TIMEOUT_MS) || 1200;
+  const ms = CONFIG.TIMEOUT_MS;
   try {
-    const r = await fetchWithTimeout(lineUrl, ms);
+    const r = await fetchWithTimeout(CONFIG.BRIDGE_URL, ms);
     await r.text();
     if (r.ok) return true;
   } catch {}
-  const startUrl = (CONFIG.AHK_START_URL || '').trim();
-  if (startUrl) {
-    try { const r = await fetchWithTimeout(startUrl, ms); await r.text(); } catch {}
+  if (CONFIG.BRIDGE_START) {
+    try { const r = await fetchWithTimeout(CONFIG.BRIDGE_START, ms); await r.text(); } catch {}
   }
   for (let i = 0; i < 6; i++) {
     try {
-      const r = await fetchWithTimeout(lineUrl, ms);
+      const r = await fetchWithTimeout(CONFIG.BRIDGE_URL, ms);
       await r.text();
       if (r.ok) return true;
     } catch {}
@@ -94,19 +83,17 @@ async function ensureBridgeRunning() {
 }
 
 async function fetchLineColFromBridge() {
-  const url = (CONFIG.AHK_LINE_URL || '').trim();
-  if (!url) return null;
-  const ms = Number(CONFIG.AHK_TIMEOUT_MS) || 1200;
   if (!(await ensureBridgeRunning())) return null;
   try {
-    const r = await fetchWithTimeout(url, ms);
+    const r = await fetchWithTimeout(CONFIG.BRIDGE_URL, CONFIG.TIMEOUT_MS);
     if (!r.ok) return null;
     const json = await r.json();
-    const line = Number(json?.lineNumber ?? json?.line ?? json?.data?.lineNumber);
-    const col = Number(json?.columnNumber ?? json?.column ?? json?.col ?? json?.data?.columnNumber);
-    // 也提取 fileUrl，作为绝对路径的可靠来源
+
+    const line = Number(json?.lineNumber ?? json?.line);
+    const col = Number(json?.columnNumber ?? json?.col);
+
     let filePath = '';
-    const rawUrl = json?.fileUrl || json?.data?.fileUrl || '';
+    const rawUrl = json?.fileUrl || '';
     if (rawUrl && rawUrl.startsWith('file://')) {
       try {
         let p = decodeSafe(new URL(rawUrl).pathname || '');
@@ -114,6 +101,7 @@ async function fetchLineColFromBridge() {
         filePath = p.replace(/\\/g, '/');
       } catch {}
     }
+
     return {
       line: Number.isFinite(line) && line >= 1 ? line : null,
       col: Number.isFinite(col) && col >= 1 ? col : null,
@@ -126,21 +114,19 @@ async function fetchLineColFromBridge() {
 
 async function openInIde(resource, target) {
   const fallbackPath = toOpenPath(resource.url);
-
-  // 优先从 AHK Bridge 获取精确光标位置和文件绝对路径（CDP 直连 DevTools 内部）
   const bridge = await fetchLineColFromBridge();
+
   const line = bridge?.line || state.lastLine || 1;
   const col = bridge?.col || state.lastCol || 1;
-  // 优先使用 bridge 返回的绝对路径，避免相对路径 BFS 匹配到错误项目
   const openPath = bridge?.filePath || fallbackPath;
   if (!openPath) return;
 
   const action = target === 'qoder' ? 'OPEN_QODER' : 'OPEN_VSCODE';
-  console.log('[IDE-Opener]', action, openPath, `L${line}:${col}`, bridge ? '(bridge)' : '(state)');
   try { port.postMessage({ action, tabId, path: openPath, line, col }); } catch {}
 }
 
-// 辅助：onSelectionChanged / setOpenResourceHandler 更新 state（作为 bridge 的 fallback）
+// ─── State Tracking (fallback when bridge unavailable) ──────────
+
 function updateState(resource, lineNumber, columnNumber) {
   if (!resource) return;
   state.lastResource = resource;

@@ -1,14 +1,17 @@
 const devtoolsPorts = new Map();
 const NATIVE_HOST_NAME = 'com.tduck.vscode_opener';
 
+// ─── Native Host Communication ──────────────────────────────────
+
 function launchIdeViaNativeHost(filePath, line, col, ide, callback) {
   if (typeof callback !== 'function' || typeof filePath !== 'string' || !filePath.trim()) {
     if (typeof callback === 'function') callback(false, 'invalid params');
     return;
   }
+
   let port;
   try { port = chrome.runtime.connectNative(NATIVE_HOST_NAME); }
-  catch (e) { callback(false, `native host unavailable: ${e?.message || 'unknown'}`); return; }
+  catch (e) { callback(false, `native host unavailable: ${e?.message}`); return; }
 
   let responded = false;
   const respond = (ok, detail) => {
@@ -29,10 +32,12 @@ function launchIdeViaNativeHost(filePath, line, col, ide, callback) {
 
   try {
     port.postMessage({ action: 'open', path: filePath, line: Math.max(1, Number(line) || 1), column: Math.max(1, Number(col) || 1), ide });
-  } catch (e) { respond(false, `post failed: ${e?.message || 'unknown'}`); }
+  } catch (e) { respond(false, `post failed: ${e?.message}`); }
 
   const timer = setTimeout(() => respond(false, 'timeout (10s)'), 10000);
 }
+
+// ─── DevTools Port Management ───────────────────────────────────
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'devtools-vscode-opener') return;
@@ -53,7 +58,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const col = Number.isFinite(Number(msg?.col)) ? Number(msg.col) : 1;
       const ide = msg.action === 'OPEN_QODER' ? 'qoder' : 'vscode';
       launchIdeViaNativeHost(targetPath, line, col, ide, (ok, detail) => {
-        if (!ok) console.warn(`[IDE-Opener] ${ide} open failed:`, detail, targetPath, line);
+        if (!ok) console.warn(`[IDE-Opener] ${ide} failed:`, detail, targetPath, line);
       });
     }
   });
@@ -65,14 +70,22 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// ─── Hotkey Commands ────────────────────────────────────────────
+
 chrome.commands.onCommand.addListener((command) => {
   const target = command === 'open-in-qoder' ? 'qoder' : command === 'open-in-vscode' ? 'vscode' : null;
   if (!target) return;
+
   chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
     const activeTabId = tabs?.[0]?.id;
     if (!Number.isInteger(activeTabId)) return;
+
     const p = devtoolsPorts.get(activeTabId);
-    if (p) { try { p.postMessage({ action: 'TRIGGER_OPEN', target }); } catch { devtoolsPorts.delete(activeTabId); } return; }
+    if (p) {
+      try { p.postMessage({ action: 'TRIGGER_OPEN', target }); } catch { devtoolsPorts.delete(activeTabId); }
+      return;
+    }
+    // Fallback: if only one devtools panel exists, use it
     if (devtoolsPorts.size === 1) {
       const [fbId, fbPort] = [...devtoolsPorts][0];
       try { fbPort.postMessage({ action: 'TRIGGER_OPEN', target }); } catch { devtoolsPorts.delete(fbId); }

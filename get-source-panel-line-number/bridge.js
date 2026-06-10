@@ -4,22 +4,19 @@ const http = require('http');
 const CDP_PORT = 9223;
 const BRIDGE_PORT = 3000;
 
-// Cache: remember last successful result to avoid returning 0 when Sources panel is temporarily unfocused
+// Cache last successful result; auto-restart after consecutive failures
 let lastResult = null;
 let consecutiveFailures = 0;
-const MAX_FAILURES_BEFORE_RESTART = 3;
+const MAX_FAILURES = 3;
 
-/**
- * 核心逻辑：从 DevTools 内部上下文中获取行号
- * 注意：DevTools 本身也是一个 Web 页面，需要找到其对应的 Target
- */
+// ─── CDP: Get Cursor Position from DevTools Sources Panel ───────
+
 async function getDevToolsLineNumber() {
     let client;
     try {
         const targets = await CDP.List({ port: CDP_PORT });
         const devtoolsTarget = targets.find(t => t.type === 'devtools' || t.url.includes('devtools://'));
-
-        if (!devtoolsTarget) return { error: 'DevTools not open' };
+        if (!devtoolsTarget) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
 
         client = await CDP({ port: CDP_PORT, target: devtoolsTarget });
         const { Runtime } = client;
@@ -29,27 +26,17 @@ async function getDevToolsLineNumber() {
                 const panel = UI.panels && UI.panels.sources;
                 if (!panel) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
 
-                const sourcesViewRaw = panel.sourcesViewInternal || panel.sourcesView || panel._sourcesView || panel._sourcesViewInternal;
-                const sourcesView = (typeof sourcesViewRaw === 'function')
-                    ? sourcesViewRaw.call(panel)
-                    : sourcesViewRaw;
-                if (!sourcesView || !sourcesView.currentSourceFrame) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
+                const svRaw = panel.sourcesViewInternal || panel.sourcesView || panel._sourcesView || panel._sourcesViewInternal;
+                const sv = (typeof svRaw === 'function') ? svRaw.call(panel) : svRaw;
+                if (!sv || !sv.currentSourceFrame) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
 
-                const frame = sourcesView.currentSourceFrame();
+                const frame = sv.currentSourceFrame();
                 if (!frame || !frame.textEditorInternal) return { lineNumber: 0, columnNumber: 0, fileUrl: '' };
 
-                // 获取当前文件 URL
                 let fileUrl = '';
                 try {
-                    // uiSourceCode() 是 getter 方法，需要调用
-                    const uiSourceCode = (typeof frame.uiSourceCode === 'function')
-                        ? frame.uiSourceCode()
-                        : frame.uiSourceCode;
-                    if (uiSourceCode) {
-                        fileUrl = (typeof uiSourceCode.url === 'function')
-                            ? uiSourceCode.url()
-                            : (uiSourceCode._url || uiSourceCode.url || '');
-                    }
+                    const usc = (typeof frame.uiSourceCode === 'function') ? frame.uiSourceCode() : frame.uiSourceCode;
+                    if (usc) fileUrl = (typeof usc.url === 'function') ? usc.url() : (usc._url || usc.url || '');
                 } catch(e) {}
 
                 const state = frame.textEditorInternal.state;
@@ -59,57 +46,26 @@ async function getDevToolsLineNumber() {
                 const doc = state && state.doc;
 
                 if (doc && typeof from === 'number' && doc.lineAt) {
-                    const lineInfo = doc.lineAt(from);
-                    const lineNumber = lineInfo.number;
-                    // 计算列号: 光标位置 from 减去行起始位置
-                    const lineStart = lineInfo.from;
-                    const columnNumber = from - lineStart + 1; // 1-based 列号
-                    return { lineNumber, columnNumber, fileUrl };
+                    const info = doc.lineAt(from);
+                    return { lineNumber: info.number, columnNumber: from - info.from + 1, fileUrl };
                 }
-
                 return { lineNumber: 0, columnNumber: 0, fileUrl };
             })()
         `;
 
         const result = await Runtime.evaluate({ expression, returnByValue: true });
-        if (!result || !result.result) {
-            return { error: 'No eval result' };
-        }
-
-        if (result.result.value !== undefined) {
-            const val = result.result.value;
-            // Cache successful results (lineNumber > 0)
-            if (val && val.lineNumber > 0) {
-                lastResult = { ...val };
-            }
-            return val;
-        }
-
-        return { error: 'Unexpected eval result' };
+        const val = result?.result?.value;
+        if (val && val.lineNumber > 0) lastResult = { ...val };
+        return val || { lineNumber: 0, columnNumber: 0, fileUrl: '' };
     } catch (err) {
-        return { error: (err && err.message) ? err.message : 'Unknown error' };
+        return { lineNumber: 0, columnNumber: 0, fileUrl: '', error: err.message };
     } finally {
         if (client) await client.close();
     }
 }
 
-function probeExistingBridge(port) {
-    return new Promise((resolve) => {
-        const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
-            resolve(res.statusCode === 200);
-            res.resume();
-        });
+// ─── HTTP Server ────────────────────────────────────────────────
 
-        req.setTimeout(800, () => {
-            req.destroy();
-            resolve(false);
-        });
-
-        req.on('error', () => resolve(false));
-    });
-}
-
-// 暴露 HTTP 服务
 const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url, `http://127.0.0.1:${BRIDGE_PORT}`).pathname;
 
@@ -122,35 +78,29 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/line-number' || pathname === '/line-number/') {
         const data = await getDevToolsLineNumber();
 
-        if (data && data.lineNumber > 0) {
-            // Success: reset failure counter
+        if (data.lineNumber > 0) {
             consecutiveFailures = 0;
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(data));
             return;
         }
 
-        // CDP returned 0 (panel not focused or stale)
+        // CDP returned 0 → use cache, auto-restart after MAX_FAILURES
         consecutiveFailures++;
-        console.log(`[bridge] lineNumber=0, consecutiveFailures=${consecutiveFailures}/${MAX_FAILURES_BEFORE_RESTART}`);
-
-        // Auto-restart bridge after consecutive failures to recover CDP connection
-        if (consecutiveFailures >= MAX_FAILURES_BEFORE_RESTART) {
-            console.log(`[bridge] Auto-restarting after ${consecutiveFailures} consecutive failures...`);
-            // Respond with cached result before restarting
-            const fallback = lastResult ? { ...lastResult, _cached: true, _restarting: true } : { lineNumber: 0, columnNumber: 0, fileUrl: '', _restarting: true };
+        if (consecutiveFailures >= MAX_FAILURES) {
+            console.log(`[bridge] Auto-restart after ${consecutiveFailures} failures`);
+            const fallback = lastResult
+                ? { ...lastResult, _cached: true, _restarting: true }
+                : { lineNumber: 0, columnNumber: 0, fileUrl: '', _restarting: true };
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(fallback));
-            // Exit process — devtools.js ensureBridgeRunning will restart it
             setTimeout(() => process.exit(0), 100);
             return;
         }
 
-        // Return cached result as immediate fallback
         if (lastResult) {
-            const cached = { ...lastResult, _cached: true };
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(cached));
+            res.end(JSON.stringify({ ...lastResult, _cached: true }));
             return;
         }
 
@@ -163,22 +113,29 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ error: 'Not found' }));
 });
 
-server.on('error', async (err) => {
-    if (err && err.code === 'EADDRINUSE') {
-        const healthy = await probeExistingBridge(BRIDGE_PORT);
-        if (healthy) {
-            console.log(`Bridge already running at http://localhost:${BRIDGE_PORT}`);
-            process.exit(0);
-        }
+// ─── Startup ────────────────────────────────────────────────────
 
-        console.error(`Port ${BRIDGE_PORT} is in use by another process.`);
-        process.exit(1);
+server.on('error', async (err) => {
+    if (err?.code === 'EADDRINUSE') {
+        // Check if an existing bridge is healthy
+        try {
+            await new Promise((resolve) => {
+                const req = http.get(`http://127.0.0.1:${BRIDGE_PORT}/health`, (res) => {
+                    resolve(res.statusCode === 200);
+                    res.resume();
+                });
+                req.setTimeout(800, () => { req.destroy(); resolve(false); });
+                req.on('error', () => resolve(false));
+            }).then(healthy => {
+                if (healthy) { console.log(`Bridge already running`); process.exit(0); }
+                else { console.error(`Port ${BRIDGE_PORT} in use`); process.exit(1); }
+            });
+        } catch { process.exit(1); }
         return;
     }
-
     throw err;
 });
 
 server.listen(BRIDGE_PORT, () => {
-    console.log(`Bridge service running at http://localhost:${BRIDGE_PORT}`);
+    console.log(`Bridge running at http://localhost:${BRIDGE_PORT}`);
 });

@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { execSync } = require('child_process');
 const os = require('os');
-
-// Debug: log when native host is invoked
-fs.appendFileSync(path.join(os.tmpdir(), 'native-host-debug.log'),
-  `[${new Date().toISOString()}] Native host started\n`);
 
 // ─── Path Resolution ────────────────────────────────────────────
 
@@ -15,7 +11,6 @@ function resolveFilePath(inputPath) {
   if (!p) return '';
   if (path.isAbsolute(p) || /^[A-Za-z]:[/\\]/.test(p)) return path.normalize(p);
 
-  // BFS: search common project dirs + 1-level subdirs (max depth 2)
   const candidates = new Set([process.cwd()]);
   const home = process.env.USERPROFILE || process.env.HOME || '';
   if (home) {
@@ -49,59 +44,110 @@ function resolveFilePath(inputPath) {
   return '';
 }
 
-function pickQoderCmd() {
-  const opts = [
-    process.env.QODER_PATH,
-    'C:/Program Files/Qoder/bin/qoder.cmd',
-    'C:/Program Files (x86)/Qoder/bin/qoder.cmd',
-    path.join(process.env.LOCALAPPDATA || '', 'Programs/Qoder/bin/qoder.cmd'),
-    path.join(process.env.LOCALAPPDATA || '', 'Programs/qoder/bin/qoder.cmd'),
-    'D:/Software/Qoder/bin/qoder.cmd'
-  ];
-  for (const o of opts) if (o && fs.existsSync(o)) return o;
-  if (process.platform === 'win32') {
-    for (let c = 65; c <= 90; c++) {
-      const f = `${String.fromCharCode(c)}:/Software/Qoder/bin/qoder.cmd`;
-      if (fs.existsSync(f)) return f;
-    }
+function findProjectRoot(filePath) {
+  let cur = path.resolve(path.dirname(filePath));
+  for (let i = 0; i < 6; i++) {
+    if (fs.existsSync(path.join(cur, 'package.json')) || fs.existsSync(path.join(cur, '.git'))) return cur;
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
   }
-  return 'qoder.cmd';
+  return path.resolve(path.dirname(filePath));
 }
 
-function pickCodeCmd() {
-  for (const o of [process.env.VSCODE_PATH, 'C:/Program Files/Microsoft VS Code/bin/code.cmd', 'C:/Program Files (x86)/Microsoft VS Code/bin/code.cmd']) {
-    if (o && fs.existsSync(o)) return o;
-  }
-  return 'code.cmd';
-}
-
-// ─── Open File (CLI --goto: reliable, no GUI automation) ─────────
+// ─── Open File (VDM activate + clipboard + Quick Open, single pwsh) ──
 
 function openFile(file, line, col, ide) {
-  const debugLog = (s) => fs.appendFileSync(path.join(os.tmpdir(), 'native-host-debug.log'),
-    `[${new Date().toISOString()}] ${s}\n`);
-  debugLog(`openFile input: file=${file}, line=${line}, col=${col}, ide=${ide}`);
-
   const resolved = resolveFilePath(file);
-  debugLog(`resolveFilePath result: ${resolved}`);
   if (!resolved) throw new Error(`cannot resolve: ${file}`);
 
+  const cwd = findProjectRoot(resolved);
+  const processName = ide === 'qoder' ? 'Qoder' : 'code';
+  const projectName = cwd ? path.basename(cwd) : '';
+
+  // Relative path with :line:col for Quick Open
+  const relPath = path.relative(cwd, resolved).replace(/\\/g, '/');
   const lineNum = Math.max(1, Number(line) || 1);
   const colNum = Math.max(1, Number(col) || 1);
-  const gotoArg = `${resolved}:${lineNum}:${colNum}`;
+  const openPath = `${relPath}:${lineNum}:${colNum}`;
 
-  // Pick CLI command based on IDE type
-  const cmd = ide === 'qoder' ? pickQoderCmd() : pickCodeCmd();
-  debugLog(`Spawning: ${cmd} --goto ${gotoArg}`);
+  // Combined C#: VDM window activation + Quick Open keyboard sim
+  const cs = [
+    'using System;using System.Collections.Generic;using System.IO;using System.Runtime.InteropServices;using System.Text;using System.Threading;',
+    'public class VdmKfo {',
+    '  [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc f, IntPtr l);',
+    '  delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);',
+    '  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);',
+    '  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);',
+    '  [DllImport("user32.dll",CharSet=CharSet.Auto)] static extern IntPtr SendMessage(IntPtr hWnd,int m,IntPtr w,StringBuilder l);',
+    '  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int n);',
+    '  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);',
+    '  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);',
+    '  [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte sc, uint f, UIntPtr e);',
+    '  [DllImport("ole32.dll")] static extern int CoInitializeEx(IntPtr p, uint d);',
+    '  [ComImport,Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
+    '  interface IVirtualDesktopManager {',
+    '    int IsWindowOnCurrentVirtualDesktop(IntPtr w, out bool on);',
+    '    int GetWindowDesktopId(IntPtr w, out Guid id);',
+    '  }',
+    '  [ComImport,Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A")] class VirtualDesktopManagerClass {}',
+    '  static string GetTitle(IntPtr h) {',
+    '    int len=(int)SendMessage(h,0x000E,IntPtr.Zero,null); if(len<=0) return "";',
+    '    var sb=new StringBuilder(len+1); SendMessage(h,0x000D,(IntPtr)sb.Capacity,sb); return sb.ToString();',
+    '  }',
+    '  static void KeyDown(short vk){keybd_event((byte)vk,0,0,UIntPtr.Zero);}',
+    '  static void KeyUp(short vk){keybd_event((byte)vk,0,2,UIntPtr.Zero);}',
+    '  public static string Go(string proc, string proj, string logF) {',
+    '    var log=new List<string>(); CoInitializeEx(IntPtr.Zero,0);',
+    '    IVirtualDesktopManager vdm=null;',
+    '    try { vdm=(IVirtualDesktopManager)new VirtualDesktopManagerClass(); log.Add("VDM:OK"); }',
+    '    catch(Exception e) { log.Add("VDM:FAIL "+e.Message); }',
+    '    var pids=new HashSet<uint>();',
+    '    foreach(var p in System.Diagnostics.Process.GetProcessesByName(proc)) pids.Add((uint)p.Id);',
+    '    IntPtr best=IntPtr.Zero,fb=IntPtr.Zero;',
+    '    EnumWindows((hwnd,_)=>{',
+    '      uint pid; GetWindowThreadProcessId(hwnd,out pid);',
+    '      if(!pids.Contains(pid)||!IsWindowVisible(hwnd)) return true;',
+    '      bool onCur=false;',
+    '      if(vdm!=null) { try{vdm.IsWindowOnCurrentVirtualDesktop(hwnd,out onCur);}catch{onCur=false;} }',
+    '      if(!onCur) return true;',
+    '      string t=GetTitle(hwnd);',
+    '      if(fb==IntPtr.Zero) fb=hwnd;',
+    '      if(!string.IsNullOrEmpty(proj)&&t.IndexOf(proj,StringComparison.OrdinalIgnoreCase)>=0) best=hwnd;',
+    '      return true;',
+    '    },IntPtr.Zero);',
+    '    IntPtr pick=best!=IntPtr.Zero?best:fb;',
+    '    if(pick==IntPtr.Zero) { log.Add("NO_MATCH"); try{File.AppendAllLines(logF,log);}catch{} return ""; }',
+    '    ShowWindow(pick,IsIconic(pick)?3:5);',
+    '    keybd_event(0x12,0,0,UIntPtr.Zero); keybd_event(0x12,0,2,UIntPtr.Zero);',
+    '    SetForegroundWindow(pick);',
+    '    Thread.Sleep(600);',
+    '    KeyDown(0x11); KeyDown(0x10); KeyDown(0x4E); Thread.Sleep(50); KeyUp(0x4E); KeyUp(0x10); KeyUp(0x11);',
+    '    KeyDown(0x11); KeyDown(0x56); Thread.Sleep(80); KeyUp(0x56); KeyUp(0x11);',
+    '    Thread.Sleep(200);',
+    '    KeyDown(0x0D); Thread.Sleep(50); KeyUp(0x0D);',
+    '    Thread.Sleep(300);',
+    '    keybd_event(0x12,0,0,UIntPtr.Zero); keybd_event(0x12,0,2,UIntPtr.Zero);',
+    '    Thread.Sleep(100);',
+    '    keybd_event(0x12,0,0,UIntPtr.Zero); keybd_event(0x12,0,2,UIntPtr.Zero);',
+    '    log.Add("OK: hwnd="+pick); try{File.AppendAllLines(logF,log);}catch{}',
+    '    return pick.ToString();',
+    '  }',
+    '}'
+  ].join('\n');
 
-  // CLI --goto handles: open file, jump to line:col, reuse existing window, activate window
-  const child = spawn(cmd, ['--goto', gotoArg], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true
-  });
-  child.unref();
-  debugLog(`Spawned PID: ${child.pid}`);
+  const logFile = path.join(os.tmpdir(), 'ide-vdm-debug.log');
+  const ps = `Set-Clipboard -Value '${openPath.replace(/'/g, "''")}'
+Add-Type @"\n${cs}\n"@
+[VdmKfo]::Go('${processName}','${projectName}','${logFile.replace(/\\/g, '/')}')`;
+
+  const tmp = path.join(os.tmpdir(), `ide-open-${Date.now()}.ps1`);
+  try {
+    fs.writeFileSync(tmp, ps, 'utf8');
+    execSync(`pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmp}"`, { timeout: 10000 });
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
 }
 
 // ─── Native Messaging Protocol ──────────────────────────────────
@@ -128,28 +174,14 @@ function sendNative(obj) {
 }
 
 readNative((err, msg) => {
-  const debugLog = (s) => fs.appendFileSync(path.join(os.tmpdir(), 'native-host-debug.log'),
-    `[${new Date().toISOString()}] ${s}\n`);
+  if (err) return sendNative({ ok: false, error: String(err) });
+  if (!msg || msg.action !== 'open' || !msg.path) return sendNative({ ok: false, error: 'invalid message' });
 
-  if (err) {
-    debugLog(`Error reading message: ${err}`);
-    return sendNative({ ok: false, error: String(err) });
-  }
-  debugLog(`Received message: ${JSON.stringify(msg)}`);
-
-  if (!msg || msg.action !== 'open' || !msg.path) {
-    debugLog(`Invalid message, rejecting`);
-    return sendNative({ ok: false, error: 'invalid message' });
-  }
   const ide = msg.ide === 'qoder' ? 'qoder' : 'vscode';
-  debugLog(`Opening in ${ide}: ${msg.path}:${msg.line}:${msg.column}`);
-
   try {
     openFile(msg.path, msg.line, msg.column, ide);
-    debugLog(`openFile completed successfully`);
-    sendNative({ ok: true, ide, target: `${msg.path}:${msg.line || 1}:${msg.column || 1}` });
+    sendNative({ ok: true, ide });
   } catch (e) {
-    debugLog(`openFile error: ${e?.message}`);
     sendNative({ ok: false, ide, error: e?.message });
   }
 });

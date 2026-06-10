@@ -17,6 +17,13 @@
 - [README.md](file://README.md)
 </cite>
 
+## 更新摘要
+**所做更改**
+- 更新了原生主机组件部分，反映从复杂 PowerShell 逻辑向直接 CLI 调用方式的简化
+- 修订了架构概览图，展示简化的数据流架构
+- 更新了故障排除指南，反映新的 PowerShell 依赖关系变化
+- 新增了关于简化实现的技术说明
+
 ## 目录
 1. [简介](#简介)
 2. [项目结构](#项目结构)
@@ -39,6 +46,8 @@ DevTools VS Code 开发者工具集成系统是一个基于 Chrome 扩展和 Aut
 - **路径解析优化**：智能解析相对路径，支持多种项目结构
 
 该系统通过三个主要组件协同工作：Chrome DevTools 扩展、Node.js 原生主机和 AutoHotkey 辅助工具。
+
+**更新** 系统现已简化原生主机实现，移除了复杂的 PowerShell 逻辑，改用更直接的 CLI 调用方式，显著提升了可靠性和系统复杂度。
 
 ## 项目结构
 
@@ -74,7 +83,7 @@ A5 --> A7[install-native-host.ps1]
 **图表来源**
 - [manifest.json:1-32](file://devtools-vscode-opener/manifest.json#L1-L32)
 - [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
-- [host.js:1-250](file://devtools-vscode-opener/native-host/host.js#L1-L250)
+- [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
 
 **章节来源**
 - [README.md:1-2](file://README.md#L1-L2)
@@ -107,34 +116,36 @@ A5 --> A7[install-native-host.ps1]
 - **窗口管理**：智能激活目标 IDE 窗口，支持虚拟桌面
 
 **章节来源**
-- [background.js:1-82](file://devtools-vscode-opener/background.js#L1-L82)
-- [devtools.js:1-152](file://devtools-vscode-opener/devtools.js#L1-L152)
-- [host.js:1-250](file://devtools-vscode-opener/native-host/host.js#L1-L250)
+- [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
+- [devtools.js:1-151](file://devtools-vscode-opener/devtools.js#L1-L151)
+- [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
 
 ## 架构概览
 
-系统采用分层架构设计，实现了松耦合的组件间通信：
+系统采用分层架构设计，实现了松耦合的组件间通信。经过简化后，原生主机实现更加直接高效：
 
 ```mermaid
 sequenceDiagram
 participant DevTools as DevTools面板
 participant Background as 背景脚本
 participant NativeHost as 原生主机
+participant PowerShell as PowerShell引擎
 participant IDE as IDE应用
 DevTools->>Background : INIT连接请求
 Background->>DevTools : PONG响应
 DevTools->>Background : OPEN_VSCODE请求
 Background->>NativeHost : 发送原生消息
-NativeHost->>NativeHost : 解析文件路径
-NativeHost->>IDE : 启动IDE并定位文件
-IDE-->>NativeHost : 启动确认
-NativeHost-->>Background : 返回结果
-Background-->>DevTools : 显示结果
+NativeHost->>PowerShell : 直接CLI调用
+PowerShell->>PowerShell : 执行VDM激活逻辑
+PowerShell->>IDE : 启动IDE并定位文件
+IDE-->>PowerShell : 启动确认
+PowerShell-->>NativeHost : 返回执行结果
+NativeHost-->>Background : 显示结果
 ```
 
 **图表来源**
-- [background.js:37-66](file://devtools-vscode-opener/background.js#L37-L66)
-- [devtools.js:116-128](file://devtools-vscode-opener/devtools.js#L116-L128)
+- [background.js:6-38](file://devtools-vscode-opener/background.js#L6-L38)
+- [devtools.js:115-126](file://devtools-vscode-opener/devtools.js#L115-L126)
 
 ### 数据流架构
 
@@ -145,14 +156,15 @@ B --> C[获取文件URL和光标位置]
 C --> D[解析为本地文件路径]
 D --> E[准备原生消息]
 E --> F[发送到原生主机]
-F --> G[启动IDE并定位]
-G --> H[返回执行结果]
-H --> I[更新UI状态]
+F --> G[直接CLI调用PowerShell]
+G --> H[执行VDM激活和文件定位]
+H --> I[返回执行结果]
+I --> J[更新UI状态]
 ```
 
 **图表来源**
-- [devtools.js:116-128](file://devtools-vscode-opener/devtools.js#L116-L128)
-- [host.js:190-214](file://devtools-vscode-opener/native-host/host.js#L190-L214)
+- [devtools.js:115-126](file://devtools-vscode-opener/devtools.js#L115-L126)
+- [host.js:140-151](file://devtools-vscode-opener/native-host/host.js#L140-L151)
 
 ## 详细组件分析
 
@@ -177,7 +189,7 @@ G --> H[返回本地路径]
 ```
 
 **图表来源**
-- [devtools.js:40-59](file://devtools-vscode-opener/devtools.js#L40-L59)
+- [devtools.js:33-51](file://devtools-vscode-opener/devtools.js#L33-L51)
 
 #### 光标位置获取机制
 
@@ -187,11 +199,13 @@ G --> H[返回本地路径]
 2. **状态回退**：使用 DevTools 面板的最后已知状态作为备用方案
 
 **章节来源**
-- [devtools.js:61-112](file://devtools-vscode-opener/devtools.js#L61-L112)
+- [devtools.js:85-111](file://devtools-vscode-opener/devtools.js#L85-L111)
 
 ### 原生主机组件
 
-#### 路径解析优化算法
+**更新** 原生主机实现已简化，移除了复杂的 PowerShell 逻辑，采用更直接的 CLI 调用方式：
+
+#### 简化后的路径解析优化算法
 
 原生主机实现了高效的路径解析算法，支持以下特性：
 
@@ -221,11 +235,20 @@ IDELauncher --> VirtualDesktopManager : "管理窗口激活"
 ```
 
 **图表来源**
-- [host.js:9-57](file://devtools-vscode-opener/native-host/host.js#L9-L57)
-- [host.js:190-214](file://devtools-vscode-opener/native-host/host.js#L190-L214)
+- [host.js:9-56](file://devtools-vscode-opener/native-host/host.js#L9-L56)
+- [host.js:140-151](file://devtools-vscode-opener/native-host/host.js#L140-L151)
+
+#### 直接 CLI 调用实现
+
+**新增** 系统现在使用直接的 PowerShell CLI 调用方式替代复杂的内联脚本：
+
+- **简化调用**：通过 `pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File` 直接执行生成的 PowerShell 脚本
+- **临时文件管理**：创建临时 .ps1 文件并在执行后清理
+- **超时控制**：设置 10 秒超时防止挂起
+- **错误处理**：完善的 try-catch 和 finally 块确保资源清理
 
 **章节来源**
-- [host.js:1-250](file://devtools-vscode-opener/native-host/host.js#L1-L250)
+- [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
 
 ### 源码面板桥接组件
 
@@ -323,7 +346,7 @@ subgraph "外部依赖"
 A[Chrome DevTools]
 B[Node.js Runtime]
 C[Windows API]
-D[PowerShell]
+D[PowerShell CLI]
 end
 subgraph "核心组件"
 E[DevTools Extension]
@@ -361,8 +384,8 @@ H --> E
 - **路径解析与 IDE 启动**：通过统一的接口抽象实现解耦
 
 **章节来源**
-- [background.js:1-82](file://devtools-vscode-opener/background.js#L1-L82)
-- [host.js:216-249](file://devtools-vscode-opener/native-host/host.js#L216-L249)
+- [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
+- [host.js:176-188](file://devtools-vscode-opener/native-host/host.js#L176-L188)
 
 ## 性能考虑
 
@@ -391,7 +414,7 @@ J --> K[最终失败]
 ```
 
 **图表来源**
-- [devtools.js:65-94](file://devtools-vscode-opener/devtools.js#L65-L94)
+- [devtools.js:64-83](file://devtools-vscode-opener/devtools.js#L64-L83)
 
 ### 跨平台兼容性
 
@@ -400,6 +423,8 @@ J --> K[最终失败]
 - **路径分隔符转换**：统一使用 '/' 作为路径分隔符
 - **命令行参数适配**：根据操作系统选择合适的启动命令
 - **权限管理**：通过任务计划程序实现普通权限启动
+
+**更新** 简化后的实现减少了 PowerShell 复杂性，提升了跨平台稳定性。
 
 ## 故障排除指南
 
@@ -441,6 +466,29 @@ J --> K[最终失败]
    - 验证 IDE 窗口可见性
    - 确认具有必要的系统权限
 
+**更新** PowerShell 相关问题现在更加直接：
+
+3. **PowerShell 执行失败**
+   - 确认 PowerShell CLI 可用性
+   - 检查执行策略设置
+   - 验证临时文件写入权限
+   - 查看 ide-vdm-debug.log 日志文件
+
+#### 原生主机简化问题
+
+**新增** 由于实现了更直接的 CLI 调用方式：
+
+4. **CLI 调用超时**
+   - 检查 PowerShell 执行策略
+   - 验证临时目录权限
+   - 确认没有防病毒软件拦截
+   - 查看 10 秒超时限制
+
+5. **临时文件清理失败**
+   - 检查文件锁定情况
+   - 验证磁盘空间充足
+   - 确认没有权限问题
+
 **章节来源**
 - [install-native-host.ps1:1-58](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L58)
 - [get_line_number.ahk:115-159](file://get-source-panel-line-number/get_line_number.ahk#L115-L159)
@@ -452,14 +500,17 @@ J --> K[最终失败]
 - **控制台日志**：详细的执行过程记录
 - **状态报告**：系统健康检查和诊断信息
 - **错误追踪**：完整的错误堆栈信息
+- **PowerShell 日志**：新增的 ide-vdm-debug.log 文件用于 VDM 激活调试
+
+**更新** 新增了 PowerShell 执行日志文件，便于调试虚拟桌面管理和窗口激活问题。
 
 **章节来源**
-- [devtools.js:126-127](file://devtools-vscode-opener/devtools.js#L126-L127)
-- [host.js:149-160](file://devtools-vscode-opener/native-host/host.js#L149-L160)
+- [devtools.js:125-126](file://devtools-vscode-opener/devtools.js#L125-L126)
+- [host.js:139](file://devtools-vscode-opener/native-host/host.js#L139)
 
 ## 结论
 
-DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备的开发工具集。其主要优势包括：
+DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备的开发工具集。经过简化实现后，系统的主要优势进一步增强：
 
 ### 技术优势
 
@@ -467,6 +518,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **跨平台支持**：通过原生主机实现跨平台兼容性
 - **智能路径解析**：高效的路径解析算法支持多种开发场景
 - **性能优化**：合理的超时控制和资源管理机制
+- **简化实现**：移除复杂 PowerShell 逻辑，提升系统可靠性
 
 ### 用户价值
 
@@ -474,6 +526,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **改善开发体验**：智能激活窗口，支持虚拟桌面环境
 - **降低学习成本**：直观的界面和简单的配置流程
 - **增强开发灵活性**：支持多种 IDE 和开发环境
+- **提高系统稳定性**：简化的实现减少了潜在故障点
 
 ### 扩展性考虑
 
@@ -483,5 +536,8 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **配置管理**：灵活的配置选项满足不同需求
 - **API 接口**：标准化的接口便于第三方集成
 - **监控机制**：完善的日志和诊断功能
+- **PowerShell 调试**：新增的日志文件便于问题排查
 
-该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。
+**更新** 简化后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的直接 CLI 调用方式使得 PowerShell 依赖更加明确，便于用户理解和故障排除。
+
+该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。简化的实现不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。
