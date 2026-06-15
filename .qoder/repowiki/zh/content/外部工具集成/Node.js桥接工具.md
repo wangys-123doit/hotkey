@@ -14,18 +14,17 @@
 - [README.md](file://README.md)
 - [UIA.ahk](file://lib/UIA.ahk)
 - [UIA_Browser.ahk](file://lib/UIA_Browser.ahk)
+- [host.js](file://devtools-vscode-opener/native-host/host.js)
 </cite>
 
 ## 更新摘要
 **变更内容**
-- 增强AutoHotkey DevTools桥接(get_line_number.ahk)提供多字段行号解析和诊断功能
-- 改进源码面板导航体验的行号获取机制，新增列号和文件URL支持
-- 新增智能端口探测和健康检查功能
-- 增强错误处理和超时机制
-- 完善UIA菜单交互功能
-- **新增**：智能缓存和自动恢复机制，包括lastResult缓存和连续失败跟踪
-- **新增**：MAX_FAILURES阈值控制和自动重启功能
-- **新增**：_cached和_restarting标记的响应格式
+- 重大架构重构：从多步骤PowerShell流程改为单个C#解决方案
+- 集成虚拟桌面管理和键盘模拟功能
+- 新增虚拟桌面管理器(VirtualDesktopManager)和键盘事件处理
+- 增强的窗口管理和前台激活机制
+- 集成的VS Code打开器功能
+- 改进的窗口枚举和匹配算法
 
 ## 目录
 1. [简介](#简介)
@@ -41,7 +40,9 @@
 
 ## 简介
 
-Node.js桥接工具是一个基于AutoHotkey v2和Node.js的跨平台开发辅助工具，专门用于从Chrome DevTools源码面板获取当前编辑器的行号信息。该工具通过Chrome远程接口(chrome-remote-interface)实现与Chrome DevTools的深度集成，为开发者提供了一个便捷的方式来获取源码面板中的当前行号、列号和文件URL信息。
+Node.js桥接工具是一个基于AutoHotkey v2和Node.js的跨平台开发辅助工具，专门用于从Chrome DevTools源码面板获取当前编辑器的行号信息。**更新**：该系统现已重构为集成化的C#解决方案，集成了虚拟桌面管理和键盘模拟功能，提供更强大的系统级窗口管理和自动化能力。
+
+该工具通过Chrome远程接口(chrome-remote-interface)实现与Chrome DevTools的深度集成，为开发者提供了一个便捷的方式来获取源码面板中的当前行号、列号和文件URL信息。**更新**：现在还支持虚拟桌面切换、窗口焦点管理和键盘事件模拟等高级功能。
 
 该系统的核心价值在于：
 - **无缝集成**：通过HTTP API提供统一的接口，支持多种编程语言调用
@@ -53,6 +54,9 @@ Node.js桥接工具是一个基于AutoHotkey v2和Node.js的跨平台开发辅�
 - **多字段返回值**：支持同时获取行号、列号和文件URL的完整代码位置信息
 - **智能缓存机制**：提供lastResult缓存和连续失败跟踪，增强系统稳定性
 - **自动恢复功能**：在多次失败后自动重启，确保服务可用性
+- **虚拟桌面管理**：支持Windows虚拟桌面的窗口管理和切换
+- **键盘事件模拟**：提供精确的键盘按键事件模拟功能
+- **窗口管理增强**：改进的窗口枚举、匹配和前台激活机制
 
 ## 项目结构
 
@@ -69,6 +73,7 @@ UIABrowser[lib/UIA_Browser.ahk]
 RunBridgePS[run_bridge.ps1]
 NVMGuide[nvm-node-pnpm-setup-guide.md]
 Setup[setup-node-pnpm-lite.ps1]
+HostJS[devtools-vscode-opener/native-host/host.js]
 end
 subgraph "get-source-panel-line-number模块"
 Module[get-source-panel-line-number]
@@ -76,6 +81,11 @@ BridgeJS[bridge.js]
 AHKScript[get_line_number.ahk]
 VBSRun[run_bridge.vbs]
 PackageJSON[package.json]
+end
+subgraph "VS Code集成模块"
+VSCode[devtools-vscode-opener]
+Background[background.js]
+NativeHost[native-host/]
 end
 subgraph "辅助工具"
 Setup[setup-node-pnpm-lite.ps1]
@@ -87,11 +97,14 @@ Root --> UIABrowser
 Root --> RunBridgePS
 Root --> NVMGuide
 Root --> Setup
+Root --> HostJS
 Module --> BridgeJS
 Module --> AHKScript
 Module --> VBSRun
 Module --> PackageJSON
 UIA --> UIABrowser
+VSCode --> Background
+VSCode --> NativeHost
 ```
 
 **图表来源**
@@ -99,6 +112,7 @@ UIA --> UIABrowser
 - [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 - [package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
 - [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)
 
 **章节来源**
 - [README.md:1-2](file://README.md#L1-L2)
@@ -108,7 +122,7 @@ UIA --> UIABrowser
 
 ### Node.js桥接服务 (bridge.js)
 
-Node.js桥接服务是整个系统的核心组件，负责与Chrome DevTools进行直接通信。该服务的主要职责包括：
+Node.js桥接服务是整个系统的核心组件，负责与Chrome DevTools进行直接通信。**更新**：该服务现在作为C#集成解决方案的一部分，提供基础的DevTools连接和数据获取功能。
 
 1. **Chrome目标发现**：自动扫描系统中所有Chrome相关的调试目标
 2. **DevTools连接管理**：建立与DevTools实例的安全连接
@@ -120,6 +134,18 @@ Node.js桥接服务是整个系统的核心组件，负责与Chrome DevTools进�
 8. **智能缓存管理**：维护lastResult缓存和连续失败计数
 9. **自动恢复机制**：在多次失败后自动重启服务
 10. **响应格式增强**：支持_cached和_restarting标记的响应格式
+
+### C#虚拟桌面管理器 (host.js)
+
+**新增组件**：基于C#的虚拟桌面管理器，提供系统级窗口管理和键盘事件模拟功能。
+
+1. **虚拟桌面管理**：通过IVirtualDesktopManager接口管理Windows虚拟桌面
+2. **窗口枚举和匹配**：精确的窗口查找和匹配算法
+3. **前台激活**：智能的窗口前台激活和焦点管理
+4. **键盘事件模拟**：精确的键盘按键事件模拟，支持组合键
+5. **进程管理**：基于进程名的窗口查找和管理
+6. **日志记录**：详细的系统操作日志记录和错误处理
+7. **COM接口集成**：通过P/Invoke调用Windows API
 
 ### AutoHotkey控制脚本 (get_line_number.ahk)
 
@@ -161,10 +187,11 @@ AutoHotkey脚本提供了用户友好的交互界面和自动化功能：
 - [run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
 - [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)
 
 ## 架构概览
 
-该系统采用分层架构设计，实现了清晰的职责分离和松耦合的组件关系：
+**更新**：系统现已重构为集成化的C#解决方案，实现了更紧密的组件协作和更强大的系统级功能。
 
 ```mermaid
 graph TB
@@ -173,6 +200,7 @@ AHK[AutoHotkey脚本]
 User[开发者]
 UIA[UIA浏览器自动化]
 PS[PowerShell启动器]
+VSCode[VS Code集成]
 end
 subgraph "应用服务层"
 AHKService[AHK服务管理器]
@@ -182,20 +210,27 @@ PortProbe[端口探测器]
 Diagnostic[诊断工具]
 CacheManager[缓存管理器]
 RecoveryMechanism[恢复机制]
+VirtualDesktopManager[虚拟桌面管理器]
+KeyboardSimulator[键盘模拟器]
+WindowEnumerator[窗口枚举器]
 end
 subgraph "桥接层"
 CDPServer[Chrome DevTools服务]
 JSEvaluator[JavaScript执行器]
 TargetFinder[目标发现器]
 MultiFieldParser[多字段解析器]
+VSCodeOpener[VS Code打开器]
 end
 subgraph "底层基础设施"
 Chrome[Chrome浏览器]
 NodeJS[Node.js运行时]
+CSharpRuntime[C#运行时]
 FileSystem[文件系统]
 ProcessManager[进程管理器]
 CacheStorage[缓存存储]
 FailureTracker[失败跟踪器]
+VirtualDesktop[虚拟桌面API]
+WindowsAPI[Windows API]
 end
 User --> AHK
 AHK --> AHKService
@@ -218,18 +253,67 @@ CacheManager --> FailureTracker
 RecoveryMechanism --> ProcessManager
 CacheManager --> HTTPServer
 RecoveryMechanism --> HTTPServer
+VirtualDesktopManager --> VirtualDesktop
+KeyboardSimulator --> WindowsAPI
+WindowEnumerator --> WindowsAPI
+VSCodeOpener --> VSCode
 style AHK fill:#e1f5fe
 style HTTPServer fill:#f3e5f5
 style CDPServer fill:#e8f5e8
 style Chrome fill:#fff3e0
 style HealthChecker fill:#fff3e0
+style VirtualDesktopManager fill:#ffeb3b
+style KeyboardSimulator fill:#2196f3
 ```
 
 **图表来源**
 - [bridge.js:67-81](file://get-source-panel-line-number/bridge.js#L67-L81)
 - [get_line_number.ahk:15-66](file://get-source-panel-line-number/get_line_number.ahk#L15-L66)
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)
 
 ## 详细组件分析
+
+### C#虚拟桌面管理器
+
+**新增功能**：系统集成了基于C#的虚拟桌面管理器，提供强大的系统级窗口管理和自动化能力。
+
+#### 虚拟桌面管理接口
+系统通过IVirtualDesktopManager接口实现虚拟桌面管理：
+- **IsWindowOnCurrentVirtualDesktop**：检查窗口是否在当前虚拟桌面
+- **GetWindowDesktopId**：获取窗口的虚拟桌面ID
+- **COM接口集成**：通过P/Invoke调用Windows虚拟桌面API
+
+#### 窗口枚举和匹配算法
+```mermaid
+flowchart TD
+Start([开始窗口枚举]) --> InitializeCOM["初始化COM接口"]
+InitializeCOM --> GetProcesses["获取进程列表"]
+GetProcesses --> EnumerateWindows["枚举所有窗口"]
+EnumerateWindows --> FilterByProcess["按进程过滤"]
+FilterByProcess --> FilterByVisibility["按可见性过滤"]
+FilterByVisibility --> CheckVirtualDesktop["检查虚拟桌面状态"]
+CheckVirtualDesktop --> MatchProject["匹配项目名称"]
+MatchProject --> ActivateWindow["激活目标窗口"]
+ActivateWindow --> SimulateKeys["模拟键盘事件"]
+SimulateKeys --> LogResult["记录操作结果"]
+LogResult --> End([结束])
+```
+
+**图表来源**
+- [host.js:100-127](file://devtools-vscode-opener/native-host/host.js#L100-L127)
+
+#### 键盘事件模拟
+系统提供精确的键盘事件模拟功能：
+- **KeyDown/KeyUp**：精确的按键按下和释放事件
+- **组合键支持**：支持Ctrl、Alt、Shift等修饰键组合
+- **字符输入**：支持字母、数字和特殊字符的输入
+- **延迟控制**：可配置的按键间隔和延迟时间
+
+#### 进程管理和窗口查找
+- **进程名匹配**：基于进程名查找对应窗口
+- **标题匹配**：支持项目名称的模糊匹配
+- **窗口状态检查**：检查窗口的最小化、最大化状态
+- **前台激活**：智能的窗口前台激活和焦点管理
 
 ### 智能缓存和自动恢复机制
 
@@ -531,7 +615,8 @@ CheckPort --> CheckBridge["检查Node.js服务"]
 CheckBridge --> CheckHealth["检查健康检查端点"]
 CheckHealth --> CheckCache["检查缓存状态"]
 CheckCache --> CheckRecovery["检查恢复机制"]
-CheckRecovery --> Report["生成诊断报告"]
+CheckRecovery --> CheckVirtualDesktop["检查虚拟桌面功能"]
+CheckVirtualDesktop --> Report["生成诊断报告"]
 Report --> End([结束])
 CheckChrome --> ChromeOK{"Chrome运行？"}
 CheckChrome --> ChromeFail["Chrome未运行"]
@@ -545,6 +630,8 @@ CheckCache --> CacheOK{"缓存正常？"}
 CheckCache --> CacheFail["缓存异常"]
 CheckRecovery --> RecoveryOK{"恢复机制正常？"}
 CheckRecovery --> RecoveryFail["恢复机制异常"]
+CheckVirtualDesktop --> VDOK{"虚拟桌面功能正常？"}
+CheckVirtualDesktop --> VDFail["虚拟桌面功能异常"]
 ```
 
 **图表来源**
@@ -560,6 +647,9 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
 5. **UIA框架验证**：检查UI Automation支持
 6. **缓存状态验证**：检查lastResult缓存有效性
 7. **恢复机制验证**：检查自动重启功能
+8. **虚拟桌面功能验证**：检查虚拟桌面管理器功能
+9. **键盘模拟功能验证**：检查键盘事件模拟功能
+10. **PowerShell环境验证**：检查执行策略和权限
 
 #### 增强的错误处理
 - **智能超时处理**：1秒超时限制
@@ -575,6 +665,7 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
   - `"cached": true`：使用缓存数据
   - `"restarting": true`：服务正在重启
 - **健康检查集成**：`/health`端点提供进程状态
+- **虚拟桌面错误处理**：详细的虚拟桌面操作错误信息
 
 **章节来源**
 - [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
@@ -582,6 +673,7 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
 - [run_bridge.vbs:1-2](file://get-source-panel-line-number/run_bridge.vbs#L1-L2)
 - [run_bridge.ps1:1-26](file://run_bridge.ps1#L1-L26)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)
 
 ## 依赖分析
 
@@ -630,6 +722,46 @@ FailureTracker --> CacheManager
 - [package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
 - [bridge.js:1-3](file://get-source-panel-line-number/bridge.js#L1-L3)
 
+### C#虚拟桌面管理器依赖
+
+**新增依赖**：系统集成了C#虚拟桌面管理器，依赖以下Windows API和COM接口：
+
+```mermaid
+graph LR
+subgraph "C#组件依赖"
+VirtualDesktopManager[VirtualDesktopManager]
+KeyboardSimulator[KeyboardSimulator]
+WindowEnumerator[WindowEnumerator]
+COMInterop[COM互操作]
+SystemAPI[System API]
+END
+subgraph "Windows API依赖"
+IVirtualDesktopManager[IVirtualDesktopManager接口]
+User32API[User32 API]
+Kernel32API[Kernel32 API]
+END
+subgraph "系统功能"
+WindowManagement[窗口管理]
+VirtualDesktop[虚拟桌面]
+KeyboardEvents[键盘事件]
+ProcessManagement[进程管理]
+Logging[日志记录]
+END
+VirtualDesktopManager --> IVirtualDesktopManager
+KeyboardSimulator --> User32API
+WindowEnumerator --> User32API
+COMInterop --> Kernel32API
+SystemAPI --> User32API
+VirtualDesktopManager --> WindowManagement
+VirtualDesktopManager --> VirtualDesktop
+KeyboardSimulator --> KeyboardEvents
+WindowEnumerator --> ProcessManagement
+Logging --> SystemAPI
+```
+
+**图表来源**
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)
+
 ### AutoHotkey依赖关系
 
 AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
@@ -658,16 +790,23 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - **浏览器支持**：Chrome 62+或同等版本的浏览器
 - **网络权限**：需要本地网络访问权限
 - **UIA支持**：需要支持UI Automation的Windows版本
+- **新增**：Windows虚拟桌面支持（Windows 10/11）
 
 #### UIA框架依赖
 - **Windows版本**：需要支持UI Automation的Windows版本
 - **浏览器支持**：需要支持无障碍访问的浏览器
 - **权限要求**：需要适当的UI Automation权限
 
+#### C#运行时依赖
+- **.NET Framework**：需要支持P/Invoke的.NET版本
+- **Windows API访问权限**：需要系统级API访问权限
+- **COM注册**：需要适当的COM接口注册
+
 **章节来源**
 - [package.json:1-6](file://get-source-panel-line-number/package.json#L1-L6)
 - [get_line_number.ahk:15-66](file://get-source-panel-line-number/get_line_number.ahk#L15-L66)
 - [UIA.ahk:1-800](file://lib/UIA.ahk#L1-L800)
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)
 
 ## 性能考虑
 
@@ -686,6 +825,7 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - 缓存机制避免重复的DevTools连接建立
 - **新增**：多字段数据的高效提取和序列化
 - **新增**：智能缓存策略减少不必要的查询
+- **新增**：C#虚拟桌面管理器的内存优化
 
 #### 端口探测优化
 - 异步端口检查避免阻塞主流程
@@ -718,6 +858,7 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - **更新**：JSON响应的最小化
 - **新增**：多字段数据的紧凑序列化
 - **新增**：缓存标记的轻量级表示
+- **新增**：C#虚拟桌面管理器的二进制数据传输
 - 二进制数据的避免
 - 压缩传输的考虑
 
@@ -736,6 +877,15 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 - 懒加载策略
 - 批量操作支持
 - 事件监听优化
+
+### C#虚拟桌面管理器性能优化
+
+**新增优化**：C#虚拟桌面管理器的性能优化：
+- COM接口的延迟初始化
+- 窗口枚举的增量处理
+- 键盘事件的批处理
+- 日志记录的异步写入
+- 进程名匹配的缓存机制
 
 ## 故障排除指南
 
@@ -812,6 +962,36 @@ AutoHotkey脚本依赖于系统提供的COM组件和标准功能：
 3. 确认缓存标记的正确处理
 4. 手动清除缓存并重启服务
 
+#### 虚拟桌面功能异常
+
+**症状**：虚拟桌面管理器无法正常工作
+**原因分析**：
+- Windows版本不支持虚拟桌面
+- COM接口初始化失败
+- 权限不足访问虚拟桌面API
+
+**解决步骤**：
+1. 检查Windows版本是否支持虚拟桌面
+2. 验证VirtualDesktopManager接口可用性
+3. 以管理员权限运行程序
+4. 检查COM接口注册状态
+5. 查看详细的错误日志
+
+#### 键盘事件模拟失败
+
+**症状**：键盘事件模拟功能无法正常工作
+**原因分析**：
+- Windows API调用失败
+- 权限不足模拟键盘事件
+- 目标窗口无焦点
+
+**解决步骤**：
+1. 检查User32 API的可用性
+2. 验证键盘事件模拟权限
+3. 确保目标窗口处于前台
+4. 检查键盘事件的延迟设置
+5. 查看详细的API调用错误
+
 ### 诊断工具使用
 
 系统内置了完整的诊断工具，帮助用户快速定位问题：
@@ -825,7 +1005,9 @@ CheckPort --> CheckBridge["检查Node.js服务"]
 CheckBridge --> CheckHealth["检查健康检查端点"]
 CheckHealth --> CheckCache["检查缓存状态"]
 CheckCache --> CheckRecovery["检查恢复机制"]
-CheckRecovery --> Report["生成诊断报告"]
+CheckRecovery --> CheckVirtualDesktop["检查虚拟桌面功能"]
+CheckVirtualDesktop --> CheckKeyboard["检查键盘模拟功能"]
+CheckKeyboard --> Report["生成诊断报告"]
 Report --> End([结束])
 CheckChrome --> ChromeOK{"Chrome运行？"}
 CheckChrome --> ChromeFail["Chrome未运行"]
@@ -839,6 +1021,10 @@ CheckCache --> CacheOK{"缓存正常？"}
 CheckCache --> CacheFail["缓存异常"]
 CheckRecovery --> RecoveryOK{"恢复机制正常？"}
 CheckRecovery --> RecoveryFail["恢复机制异常"]
+CheckVirtualDesktop --> VDOK{"虚拟桌面功能正常？"}
+CheckVirtualDesktop --> VDFail["虚拟桌面功能异常"]
+CheckKeyboard --> KOK{"键盘模拟功能正常？"}
+CheckKeyboard --> KFail["键盘模拟功能异常"]
 ```
 
 **图表来源**
@@ -856,6 +1042,10 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
 6. **缓存状态验证**：检查lastResult缓存有效性
 7. **恢复机制验证**：检查自动重启功能
 8. **PowerShell环境验证**：检查执行策略和权限
+9. **虚拟桌面环境验证**：检查Windows虚拟桌面支持
+10. **C#运行时验证**：检查.NET Framework版本
+11. **COM接口验证**：检查虚拟桌面API可用性
+12. **键盘模拟验证**：检查键盘事件模拟功能
 
 ### 日志记录和监控
 
@@ -867,6 +1057,8 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
 - 操作上下文信息
 - **新增**：多字段解析错误的详细记录
 - **新增**：缓存失效和恢复的日志
+- **新增**：虚拟桌面操作的详细日志
+- **新增**：键盘事件模拟的详细日志
 
 #### 性能日志
 - 响应时间统计
@@ -874,6 +1066,8 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
 - 并发访问监控
 - **新增**：多字段数据提取性能监控
 - **新增**：缓存命中率统计
+- **新增**：虚拟桌面操作性能监控
+- **新增**：键盘事件模拟性能监控
 
 #### 用户操作日志
 - 热键触发记录
@@ -881,6 +1075,8 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
 - 错误发生频率
 - **新增**：多字段获取成功率统计
 - **新增**：缓存使用情况统计
+- **新增**：虚拟桌面管理使用统计
+- **新增**：键盘模拟使用统计
 
 #### 健康检查日志
 **新增功能**：系统记录健康检查和端口探测的结果：
@@ -890,17 +1086,21 @@ CheckRecovery --> RecoveryFail["恢复机制异常"]
 - **新增**：多字段数据提取成功率
 - **新增**：缓存有效性监控
 - **新增**：自动恢复机制使用统计
+- **新增**：虚拟桌面管理器状态监控
+- **新增**：键盘模拟器状态监控
+- **新增**：响应时间监控**
 
 **章节来源**
 - [get_line_number.ahk:132-159](file://get-source-panel-line-number/get_line_number.ahk#L132-L159)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [bridge.js:67-81](file://get-source-panel-line-number/bridge.js#L67-L81)
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)
 
 ## 结论
 
-Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功地解决了从Chrome DevTools获取源码面板行号这一复杂的技术挑战。**更新**：该系统现已升级为多字段代码位置获取工具，提供了更加丰富和实用的功能，并且增强了智能缓存和自动恢复机制。
+Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功地解决了从Chrome DevTools获取源码面板行号这一复杂的技术挑战。**更新**：该系统现已重构为集成化的C#解决方案，集成了虚拟桌面管理和键盘模拟功能，提供更强大的系统级窗口管理和自动化能力。
 
-### 技ological创新性
+### 技术创新性
 - **深度集成**：直接利用DevTools内部API，避免了传统方法的局限性
 - **实时性**：提供毫秒级的行号、列号和文件URL获取能力
 - **可靠性**：完善的错误处理和恢复机制
@@ -911,6 +1111,10 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **智能缓存系统**：lastResult缓存和连续失败跟踪机制
 - **自动恢复功能**：MAX_FAILURES阈值控制和自动重启能力
 - **响应格式增强**：支持_cached和_restarting标记的响应格式
+- **虚拟桌面管理**：集成Windows虚拟桌面的窗口管理和切换功能
+- **键盘事件模拟**：提供精确的键盘按键事件模拟功能
+- **窗口管理增强**：改进的窗口枚举、匹配和前台激活机制
+- **C#运行时集成**：利用C#的高性能和系统级API访问能力
 
 ### 用户体验优化
 - **简单易用**：通过热键绑定提供一键式操作
@@ -920,6 +1124,8 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **智能多字段解析**：提供正则表达式解析和错误处理
 - **详细错误状态**：提供"Bridge Offline"、"Not in Source Panel"等详细错误信息
 - **缓存透明化**：用户可以清楚地看到缓存使用的状态
+- **虚拟桌面集成**：支持虚拟桌面切换和窗口管理
+- **键盘自动化**：支持精确的键盘事件模拟和组合键操作
 
 ### 扩展性设计
 - **模块化架构**：清晰的职责分离便于维护和扩展
@@ -930,8 +1136,10 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 - **多字段数据结构**：支持未来更多的代码位置信息扩展
 - **缓存策略可配置**：MAX_FAILURES阈值可调整
 - **恢复机制可监控**：自动重启过程可追踪
+- **C#扩展点**：虚拟桌面管理和键盘模拟功能可扩展
+- **Windows API集成**：充分利用Windows系统的原生功能
 
-该工具不仅解决了具体的开发需求，更重要的是展示了一种将现代Web技术与传统桌面应用相结合的有效模式，为类似的技术集成项目提供了宝贵的参考经验。**新增的智能缓存和自动恢复机制进一步提升了系统的稳定性和用户体验，使其成为了一个真正可靠的开发辅助工具。**
+该工具不仅解决了具体的开发需求，更重要的是展示了一种将现代Web技术与传统桌面应用相结合的有效模式，为类似的技术集成项目提供了宝贵的参考经验。**新增的智能缓存和自动恢复机制进一步提升了系统的稳定性和用户体验，而虚拟桌面管理和键盘模拟功能的集成则大大扩展了系统的应用范围和实用性。**
 
 ## 附录
 
@@ -943,6 +1151,8 @@ Node.js桥接工具是一个精心设计的跨平台开发辅助系统，成功�
 3. **权限设置**：确保脚本有足够的系统权限
 4. **UIA支持**：确保Windows版本支持UI Automation
 5. **PowerShell配置**：确保PowerShell执行策略允许脚本运行
+6. **Windows虚拟桌面**：确保Windows版本支持虚拟桌面功能
+7. **.NET Framework**：确保系统安装了支持P/Invoke的.NET版本
 
 #### 依赖安装
 ```bash
@@ -963,6 +1173,8 @@ npm list chrome-remote-interface
 - `BRIDGE_URL`：Node.js服务URL
 - `NODE_SCRIPT`：Node.js脚本路径
 - **新增**：`MAX_FAILURES`：自动重启阈值（默认3）
+- **新增**：`VIRTUAL_DESKTOP_ENABLED`：启用虚拟桌面功能（默认true）
+- **新增**：`KEYBOARD_SIMULATION_DELAY`：键盘事件延迟（默认50ms）
 
 ### 使用示例
 
@@ -981,6 +1193,10 @@ npm list chrome-remote-interface
 - **多字段分析**：利用完整的代码位置信息进行代码分析和统计
 - **缓存监控**：观察_cached标记判断数据来源
 - **恢复机制**：观察_restarting标记判断服务状态
+- **虚拟桌面管理**：使用虚拟桌面功能进行窗口管理
+- **键盘自动化**：模拟复杂的键盘组合键操作
+- **窗口切换**：通过虚拟桌面进行应用程序切换
+- **VS Code集成**：与VS Code打开器功能配合使用
 
 ### 维护和更新
 
@@ -990,6 +1206,8 @@ npm list chrome-remote-interface
 - **AutoHotkey版本**：支持AutoHotkey v2.0及以上版本
 - **Windows版本**：支持Windows 7/8/10/11
 - **PowerShell版本**：支持PowerShell 5.0及以上版本
+- **.NET Framework版本**：支持.NET Framework 4.0及以上版本
+- **虚拟桌面支持**：Windows 10/11虚拟桌面功能
 
 #### 安全考虑
 - **权限控制**：限制对系统资源的访问
@@ -997,6 +1215,9 @@ npm list chrome-remote-interface
 - **错误隔离**：防止单点故障影响整体系统
 - **UIA权限**：确保适当的无障碍访问权限
 - **缓存安全**：防止缓存数据被恶意篡改
+- **虚拟桌面权限**：确保适当的虚拟桌面访问权限
+- **键盘模拟权限**：确保适当的键盘事件模拟权限
+- **COM接口安全**：防止COM接口被滥用
 
 #### 性能监控
 - **定期健康检查**：监控服务运行状态
@@ -1007,12 +1228,28 @@ npm list chrome-remote-interface
 - **缓存性能监控**：跟踪缓存命中率和失效率
 - **恢复机制监控**：跟踪自动重启频率和成功率
 - **响应时间监控**：跟踪平均响应时间和峰值响应时间
+- **虚拟桌面性能监控**：跟踪虚拟桌面操作效率
+- **键盘模拟性能监控**：跟踪键盘事件模拟响应时间
 
 #### 缓存配置优化
 - **MAX_FAILURES调整**：根据网络环境调整自动重启阈值
 - **缓存清理策略**：定期清理过期的缓存数据
 - **内存使用优化**：监控缓存占用的内存大小
 - **性能影响评估**：评估缓存对系统性能的影响
+
+#### 虚拟桌面功能优化
+- **窗口枚举优化**：优化窗口查找算法
+- **虚拟桌面切换优化**：减少切换延迟
+- **进程匹配优化**：提高进程名匹配准确性
+- **窗口状态监控**：实时监控窗口状态变化
+- **日志记录优化**：减少日志写入开销
+
+#### 键盘模拟功能优化
+- **按键延迟优化**：根据系统性能调整延迟
+- **组合键处理优化**：提高组合键处理准确性
+- **字符输入优化**：支持更多字符集
+- **错误处理优化**：提供详细的按键模拟错误信息
+- **性能监控优化**：监控键盘模拟的性能指标
 
 **章节来源**
 - [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
@@ -1021,3 +1258,4 @@ npm list chrome-remote-interface
 - [setup-node-pnpm-lite.ps1:1-121](file://setup-node-pnpm-lite.ps1#L1-L121)
 - [nvm-node-pnpm-setup-guide.md:1-160](file://nvm-node-pnpm-setup-guide.md#L1-L160)
 - [UIA_Browser.ahk:1-800](file://lib/UIA_Browser.ahk#L1-L800)
+- [host.js:87-127](file://devtools-vscode-opener/native-host/host.js#L87-L127)

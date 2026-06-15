@@ -11,7 +11,7 @@
 - [bridge.js](file://get-source-panel-line-number/bridge.js)
 - [get_line_number.ahk](file://get-source-panel-line-number/get_line_number.ahk)
 - [package.json](file://get-source-panel-line-number/package.json)
-- [run_bridge.ps1](file://run_bridge.ps1)
+- [run_bridge.vbs](file://get-source-panel-line-number/run_bridge.vbs)
 - [AppLauncher.ahk](file://lib/AppLauncher.ahk)
 - [ChromeAppMgr.ahk](file://lib/ChromeAppMgr.ahk)
 - [README.md](file://README.md)
@@ -19,10 +19,11 @@
 
 ## 更新摘要
 **所做更改**
-- 更新了原生主机组件部分，反映从复杂 PowerShell 逻辑向直接 CLI 调用方式的简化
-- 修订了架构概览图，展示简化的数据流架构
-- 更新了故障排除指南，反映新的 PowerShell 依赖关系变化
-- 新增了关于简化实现的技术说明
+- 新增热键命令支持章节，详细说明键盘快捷键功能
+- 增强错误处理和调试能力说明，包括 PowerShell 执行日志
+- 更新用户体验优化部分，反映简化实现带来的改进
+- 完善故障排除指南，增加 PowerShell 相关问题诊断
+- 新增虚拟桌面管理调试日志功能说明
 
 ## 目录
 1. [简介](#简介)
@@ -30,10 +31,11 @@
 3. [核心组件](#核心组件)
 4. [架构概览](#架构概览)
 5. [详细组件分析](#详细组件分析)
-6. [依赖关系分析](#依赖关系分析)
-7. [性能考虑](#性能考虑)
-8. [故障排除指南](#故障排除指南)
-9. [结论](#结论)
+6. [热键命令支持](#热键命令支持)
+7. [依赖关系分析](#依赖关系分析)
+8. [性能考虑](#性能考虑)
+9. [故障排除指南](#故障排除指南)
+10. [结论](#结论)
 
 ## 简介
 
@@ -44,10 +46,11 @@ DevTools VS Code 开发者工具集成系统是一个基于 Chrome 扩展和 Aut
 - **多平台支持**：支持 Windows、macOS 和 Linux 系统
 - **虚拟桌面集成**：智能激活目标 IDE 窗口，支持 Windows 虚拟桌面环境
 - **路径解析优化**：智能解析相对路径，支持多种项目结构
+- **热键命令支持**：提供键盘快捷键快速访问功能
 
 该系统通过三个主要组件协同工作：Chrome DevTools 扩展、Node.js 原生主机和 AutoHotkey 辅助工具。
 
-**更新** 系统现已简化原生主机实现，移除了复杂的 PowerShell 逻辑，改用更直接的 CLI 调用方式，显著提升了可靠性和系统复杂度。
+**更新** 系统现已简化原生主机实现，移除了复杂的 PowerShell 逻辑，改用更直接的 CLI 调用方式，显著提升了可靠性和系统复杂度。同时增强了错误处理和调试能力，新增了虚拟桌面管理的调试日志功能。
 
 ## 项目结构
 
@@ -66,7 +69,7 @@ subgraph "源码面板桥接层"
 B[get-source-panel-line-number/] --> B1[bridge.js]
 B --> B2[get_line_number.ahk]
 B --> B3[package.json]
-B --> B4[run_bridge.ps1]
+B --> B4[run_bridge.vbs]
 end
 subgraph "辅助工具层"
 C[lib/] --> C1[AppLauncher.ahk]
@@ -82,7 +85,7 @@ A5 --> A7[install-native-host.ps1]
 
 **图表来源**
 - [manifest.json:1-32](file://devtools-vscode-opener/manifest.json#L1-L32)
-- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
 - [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
 
 **章节来源**
@@ -98,6 +101,7 @@ A5 --> A7[install-native-host.ps1]
 - **DevTools 面板**：嵌入式 JavaScript 面板，负责与背景脚本通信
 - **背景服务**：处理原生消息传递和 IDE 启动逻辑
 - **原生主机**：Node.js 应用，负责实际的文件操作和 IDE 启动
+- **热键命令**：支持 Alt+Shift+O（VS Code）和 Alt+Shift+Q（Qoder）快捷键
 
 ### 源码面板桥接组件
 
@@ -106,6 +110,7 @@ A5 --> A7[install-native-host.ps1]
 - **HTTP 服务器**：提供 /line-number 接口获取当前光标位置
 - **CDP 客户端**：连接到 Chrome DevTools 实例
 - **状态监控**：实时跟踪源码面板的文件和光标位置
+- **自动重启机制**：连续失败后自动重启以恢复功能
 
 ### 路径解析和 IDE 启动组件
 
@@ -114,6 +119,7 @@ A5 --> A7[install-native-host.ps1]
 - **路径解析算法**：支持相对路径、绝对路径和项目根目录查找
 - **IDE 启动策略**：支持 VS Code、Qoder 等多种 IDE
 - **窗口管理**：智能激活目标 IDE 窗口，支持虚拟桌面
+- **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作
 
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
@@ -141,6 +147,7 @@ PowerShell->>IDE : 启动IDE并定位文件
 IDE-->>PowerShell : 启动确认
 PowerShell-->>NativeHost : 返回执行结果
 NativeHost-->>Background : 显示结果
+Note over NativeHost : 记录调试日志到 ide-vdm-debug.log
 ```
 
 **图表来源**
@@ -158,13 +165,14 @@ D --> E[准备原生消息]
 E --> F[发送到原生主机]
 F --> G[直接CLI调用PowerShell]
 G --> H[执行VDM激活和文件定位]
-H --> I[返回执行结果]
-I --> J[更新UI状态]
+H --> I[生成调试日志]
+I --> J[返回执行结果]
+J --> K[更新UI状态]
 ```
 
 **图表来源**
 - [devtools.js:115-126](file://devtools-vscode-opener/devtools.js#L115-L126)
-- [host.js:140-151](file://devtools-vscode-opener/native-host/host.js#L140-L151)
+- [host.js:139-151](file://devtools-vscode-opener/native-host/host.js#L139-L151)
 
 ## 详细组件分析
 
@@ -197,6 +205,7 @@ G --> H[返回本地路径]
 
 1. **CDP 直接获取**：通过 Chrome Remote Debugging Protocol 获取 DevTools 内部状态
 2. **状态回退**：使用 DevTools 面板的最后已知状态作为备用方案
+3. **自动重启**：当 CDP 返回 0 时自动重启以恢复功能
 
 **章节来源**
 - [devtools.js:85-111](file://devtools-vscode-opener/devtools.js#L85-L111)
@@ -236,7 +245,7 @@ IDELauncher --> VirtualDesktopManager : "管理窗口激活"
 
 **图表来源**
 - [host.js:9-56](file://devtools-vscode-opener/native-host/host.js#L9-L56)
-- [host.js:140-151](file://devtools-vscode-opener/native-host/host.js#L140-L151)
+- [host.js:139-151](file://devtools-vscode-opener/native-host/host.js#L139-L151)
 
 #### 直接 CLI 调用实现
 
@@ -246,6 +255,7 @@ IDELauncher --> VirtualDesktopManager : "管理窗口激活"
 - **临时文件管理**：创建临时 .ps1 文件并在执行后清理
 - **超时控制**：设置 10 秒超时防止挂起
 - **错误处理**：完善的 try-catch 和 finally 块确保资源清理
+- **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作详情
 
 **章节来源**
 - [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
@@ -267,10 +277,11 @@ Bridge->>CDP : 连接到DevTools目标
 Bridge->>Runtime : evaluate() 执行代码
 Runtime-->>Bridge : 返回光标位置
 Bridge-->>Bridge : 格式化输出结果
+Note over Bridge : 连续失败时自动重启
 ```
 
 **图表来源**
-- [bridge.js:11-84](file://get-source-panel-line-number/bridge.js#L11-L84)
+- [bridge.js:14-65](file://get-source-panel-line-number/bridge.js#L14-L65)
 
 #### 端口冲突处理
 
@@ -292,11 +303,11 @@ H --> J[服务就绪]
 ```
 
 **图表来源**
-- [bridge.js:86-100](file://get-source-panel-line-number/bridge.js#L86-L100)
-- [bridge.js:123-137](file://get-source-panel-line-number/bridge.js#L123-L137)
+- [bridge.js:118-137](file://get-source-panel-line-number/bridge.js#L118-L137)
+- [bridge.js:139-142](file://get-source-panel-line-number/bridge.js#L139-L142)
 
 **章节来源**
-- [bridge.js:1-141](file://get-source-panel-line-number/bridge.js#L1-L141)
+- [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
 - [get_line_number.ahk:1-159](file://get-source-panel-line-number/get_line_number.ahk#L1-L159)
 
 ### AutoHotkey 辅助组件
@@ -336,6 +347,46 @@ ChromeAppMgr --> AppLauncher : "依赖应用启动"
 - [AppLauncher.ahk:1-146](file://lib/AppLauncher.ahk#L1-L146)
 - [ChromeAppMgr.ahk:1-321](file://lib/ChromeAppMgr.ahk#L1-L321)
 
+## 热键命令支持
+
+**新增** 系统现在提供完整的热键命令支持，用户可以通过键盘快捷键快速访问功能：
+
+### 支持的热键命令
+
+- **打开到 VS Code**：Alt+Shift+O
+- **打开到 Qoder**：Alt+Shift+Q
+
+### 热键工作机制
+
+```mermaid
+flowchart TD
+A[用户按下热键] --> B{检测热键类型}
+B --> |Alt+Shift+O| C[触发 OPEN_VSCODE]
+B --> |Alt+Shift+Q| D[触发 OPEN_QODER]
+C --> E[查找活动标签页]
+D --> E
+E --> F[获取 DevTools 连接]
+F --> G[发送打开请求]
+G --> H[调用原生主机]
+H --> I[启动 IDE 并定位文件]
+```
+
+**图表来源**
+- [manifest.json:9-24](file://devtools-vscode-opener/manifest.json#L9-L24)
+- [background.js:75-94](file://devtools-vscode-opener/background.js#L75-L94)
+
+### 热键回退机制
+
+当找不到特定标签页的 DevTools 连接时，系统提供智能回退：
+
+1. **首选连接**：使用当前活动标签页的 DevTools 连接
+2. **回退连接**：如果只有一个 DevTools 面板存在，使用该连接
+3. **连接管理**：自动清理断开的连接，避免资源泄漏
+
+**章节来源**
+- [manifest.json:9-24](file://devtools-vscode-opener/manifest.json#L9-L24)
+- [background.js:75-94](file://devtools-vscode-opener/background.js#L75-L94)
+
 ## 依赖关系分析
 
 系统采用了清晰的依赖层次结构，确保各组件间的松耦合：
@@ -347,28 +398,30 @@ A[Chrome DevTools]
 B[Node.js Runtime]
 C[Windows API]
 D[PowerShell CLI]
+E[Chrome Extension API]
 end
 subgraph "核心组件"
-E[DevTools Extension]
-F[Native Host]
-G[CDP Bridge]
-H[AHK Utilities]
+F[DevTools Extension]
+G[Native Host]
+H[CDP Bridge]
+I[AHK Utilities]
 end
 subgraph "IDE集成"
-I[VS Code]
-J[Qoder]
-K[其他IDE]
+J[VS Code]
+K[Qoder]
+L[其他IDE]
 end
-A --> E
-B --> F
-C --> F
-D --> F
+A --> F
+B --> G
+C --> G
+D --> G
 E --> F
-F --> I
-F --> J
-F --> K
-G --> E
-H --> E
+F --> G
+G --> J
+G --> K
+G --> L
+H --> F
+I --> F
 ```
 
 **图表来源**
@@ -382,6 +435,7 @@ H --> E
 - **扩展与原生主机**：通过标准的 Chrome Native Messaging 协议通信
 - **DevTools 与桥接**：通过 HTTP API 和 CDP 协议实现松耦合
 - **路径解析与 IDE 启动**：通过统一的接口抽象实现解耦
+- **热键与扩展**：通过 Chrome commands API 实现独立的功能模块
 
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
@@ -396,6 +450,7 @@ H --> E
 - **连接池管理**：DevTools 端口连接采用 Map 结构进行高效管理
 - **超时控制**：所有异步操作设置合理的超时时间（默认 10 秒）
 - **资源清理**：及时断开不再使用的连接和进程
+- **自动重启**：CDP 桥接服务在连续失败后自动重启
 
 ### 网络通信优化
 
@@ -423,6 +478,7 @@ J --> K[最终失败]
 - **路径分隔符转换**：统一使用 '/' 作为路径分隔符
 - **命令行参数适配**：根据操作系统选择合适的启动命令
 - **权限管理**：通过任务计划程序实现普通权限启动
+- **PowerShell 兼容性**：支持不同版本的 PowerShell 执行策略
 
 **更新** 简化后的实现减少了 PowerShell 复杂性，提升了跨平台稳定性。
 
@@ -442,6 +498,11 @@ J --> K[最终失败]
    - 检查 Chrome 扩展 ID 配置
    - 确认 Node.js 环境可用
 
+3. **热键命令无效**
+   - 检查 Chrome 命令配置
+   - 验证快捷键未被其他应用占用
+   - 确认 DevTools 面板处于活动状态
+
 #### 源码面板桥接问题
 
 1. **CDP 连接失败**
@@ -450,9 +511,14 @@ J --> K[最终失败]
    - 验证 DevTools 实例存在
 
 2. **端口冲突**
-   - 使用 run_bridge.ps1 检查服务状态
+   - 使用 run_bridge.vbs 检查服务状态
    - 手动终止占用端口的进程
    - 修改默认端口号配置
+
+3. **自动重启循环**
+   - 检查 MAX_FAILURES 配置值
+   - 验证 CDP 表达式语法
+   - 确认 DevTools 版本兼容性
 
 #### IDE 启动问题
 
@@ -474,20 +540,30 @@ J --> K[最终失败]
    - 验证临时文件写入权限
    - 查看 ide-vdm-debug.log 日志文件
 
+4. **虚拟桌面调试日志**
+   - 检查 ide-vdm-debug.log 文件是否存在
+   - 验证日志文件写入权限
+   - 分析 VDM 操作记录和错误信息
+
 #### 原生主机简化问题
 
 **新增** 由于实现了更直接的 CLI 调用方式：
 
-4. **CLI 调用超时**
+5. **CLI 调用超时**
    - 检查 PowerShell 执行策略
    - 验证临时目录权限
    - 确认没有防病毒软件拦截
    - 查看 10 秒超时限制
 
-5. **临时文件清理失败**
+6. **临时文件清理失败**
    - 检查文件锁定情况
    - 验证磁盘空间充足
    - 确认没有权限问题
+
+7. **VDM 激活失败**
+   - 检查 Windows 虚拟桌面功能
+   - 验证 IDE 进程名称匹配
+   - 分析 ide-vdm-debug.log 中的 VDM 错误
 
 **章节来源**
 - [install-native-host.ps1:1-58](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L58)
@@ -501,6 +577,7 @@ J --> K[最终失败]
 - **状态报告**：系统健康检查和诊断信息
 - **错误追踪**：完整的错误堆栈信息
 - **PowerShell 日志**：新增的 ide-vdm-debug.log 文件用于 VDM 激活调试
+- **CDP 调试**：桥接服务的健康检查和错误信息
 
 **更新** 新增了 PowerShell 执行日志文件，便于调试虚拟桌面管理和窗口激活问题。
 
@@ -510,7 +587,7 @@ J --> K[最终失败]
 
 ## 结论
 
-DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备的开发工具集。经过简化实现后，系统的主要优势进一步增强：
+DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备的开发工具集。经过全面改进后，系统的主要优势进一步增强：
 
 ### 技术优势
 
@@ -519,6 +596,8 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **智能路径解析**：高效的路径解析算法支持多种开发场景
 - **性能优化**：合理的超时控制和资源管理机制
 - **简化实现**：移除复杂 PowerShell 逻辑，提升系统可靠性
+- **热键支持**：完整的键盘快捷键功能
+- **增强调试**：新增虚拟桌面调试日志功能
 
 ### 用户价值
 
@@ -527,6 +606,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **降低学习成本**：直观的界面和简单的配置流程
 - **增强开发灵活性**：支持多种 IDE 和开发环境
 - **提高系统稳定性**：简化的实现减少了潜在故障点
+- **快捷键访问**：通过热键快速访问核心功能
 
 ### 扩展性考虑
 
@@ -537,7 +617,8 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **API 接口**：标准化的接口便于第三方集成
 - **监控机制**：完善的日志和诊断功能
 - **PowerShell 调试**：新增的日志文件便于问题排查
+- **热键扩展**：可扩展的快捷键系统支持更多功能
 
-**更新** 简化后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的直接 CLI 调用方式使得 PowerShell 依赖更加明确，便于用户理解和故障排除。
+**更新** 简化后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的直接 CLI 调用方式使得 PowerShell 依赖更加明确，便于用户理解和故障排除。新增的热键命令支持和调试日志功能进一步优化了用户体验。
 
 该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。简化的实现不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。

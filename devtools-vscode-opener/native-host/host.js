@@ -4,17 +4,86 @@ const path = require('path');
 const { execSync } = require('child_process');
 const os = require('os');
 
+// ─── IDE Workspace Discovery ────────────────────────────────────
+
+/**
+ * 通过 PowerShell + VDM 获取当前桌面上 IDE 进程的工作区目录。
+ * 从进程命令行参数中提取工作区路径，确保文件搜索优先在已打开的项目中进行。
+ */
+function findIdeWorkspaces(processName) {
+  if (process.platform !== 'win32') return [];
+  try {
+    const psLines = [
+      '$procs = Get-Process -Name \'' + processName + '\' -ErrorAction SilentlyContinue',
+      'if (-not $procs) { exit }',
+      'Add-Type -AssemblyName System.Management',
+      'foreach ($p in $procs) {',
+      '  try {',
+      '    $wmi = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" -ErrorAction SilentlyContinue',
+      '    if ($wmi.CommandLine) { Write-Output $wmi.CommandLine }',
+      '  } catch {}',
+      '}'
+    ];
+    const out = execSync(
+      'pwsh -NoProfile -NonInteractive -Command "' + psLines.join('; ') + '"',
+      { encoding: 'utf8', timeout: 4000 }
+    ).trim();
+    if (!out) return [];
+
+    const workspaces = [];
+    for (const line of out.split('\n').map(s => s.trim()).filter(Boolean)) {
+      // Extract workspace dirs from command-line args (quoted or unquoted paths)
+      const matches = line.match(/"([^"]+)"|(?:^|\s)([A-Za-z]:\\[^\s]+)/g);
+      if (!matches) continue;
+      for (const m of matches) {
+        let dir = m.replace(/^"|"$/g, '').trim();
+        // Skip executable paths, only keep workspace directories
+        if (/\.(cmd|exe|bat)$/i.test(dir)) continue;
+        if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+          workspaces.push(path.resolve(dir));
+        }
+      }
+    }
+    return [...new Set(workspaces)];
+  } catch { return []; }
+}
+
 // ─── Path Resolution ────────────────────────────────────────────
 
-function resolveFilePath(inputPath) {
+function resolveFilePath(inputPath, ideProcessName) {
   const p = String(inputPath || '').replace(/\\/g, '/').trim();
   if (!p) return '';
   if (path.isAbsolute(p) || /^[A-Za-z]:[/\\]/.test(p)) return path.normalize(p);
 
-  const candidates = new Set([process.cwd()]);
+  const rel = p.replace(/^\/+/, '');
+  const skip = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.vscode']);
+
+  // Priority 1: Search in IDE workspace directories (already-open projects on current desktop)
+  const workspaces = findIdeWorkspaces(ideProcessName || 'Qoder');
+  for (const ws of workspaces) {
+    const full = path.join(ws, rel);
+    if (fs.existsSync(full)) return path.normalize(full);
+    // Also search 1-level subdirs within workspace
+    try {
+      for (const entry of fs.readdirSync(ws, { withFileTypes: true })) {
+        if (entry.isDirectory() && !skip.has(entry.name)) {
+          const sub = path.join(ws, entry.name, rel);
+          if (fs.existsSync(sub)) return path.normalize(sub);
+        }
+      }
+    } catch {}
+  }
+
+  // Priority 2: BFS in common project directories
+  const candidates = new Set();
+  // Add parent dirs of known workspaces (to find sibling projects)
+  for (const ws of workspaces) {
+    const parent = path.dirname(ws);
+    if (parent !== ws) candidates.add(parent);
+  }
   const home = process.env.USERPROFILE || process.env.HOME || '';
   if (home) {
-    for (const sub of ['Desktop', 'Documents', 'code', 'workspace', 'projects', 'repos']) {
+    for (const sub of ['code', 'workspace', 'projects', 'repos', 'Desktop', 'Documents']) {
       const dir = path.join(home, sub);
       if (fs.existsSync(dir)) candidates.add(dir);
     }
@@ -28,8 +97,6 @@ function resolveFilePath(inputPath) {
     }
   }
 
-  const rel = p.replace(/^\/+/, '');
-  const skip = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.vscode']);
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, rel))) return path.normalize(path.join(dir, rel));
     try {
@@ -58,11 +125,11 @@ function findProjectRoot(filePath) {
 // ─── Open File (VDM activate + clipboard + Quick Open, single pwsh) ──
 
 function openFile(file, line, col, ide) {
-  const resolved = resolveFilePath(file);
+  const processName = ide === 'qoder' ? 'Qoder' : 'code';
+  const resolved = resolveFilePath(file, processName);
   if (!resolved) throw new Error(`cannot resolve: ${file}`);
 
   const cwd = findProjectRoot(resolved);
-  const processName = ide === 'qoder' ? 'Qoder' : 'code';
   const projectName = cwd ? path.basename(cwd) : '';
 
   // Relative path with :line:col for Quick Open
