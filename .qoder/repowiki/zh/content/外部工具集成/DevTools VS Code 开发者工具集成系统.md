@@ -15,15 +15,16 @@
 - [AppLauncher.ahk](file://lib/AppLauncher.ahk)
 - [ChromeAppMgr.ahk](file://lib/ChromeAppMgr.ahk)
 - [README.md](file://README.md)
+- [native-host/README.md](file://devtools-vscode-opener/native-host/README.md)
 </cite>
 
 ## 更新摘要
 **所做更改**
-- 新增热键命令支持章节，详细说明键盘快捷键功能
-- 增强错误处理和调试能力说明，包括 PowerShell 执行日志
-- 更新用户体验优化部分，反映简化实现带来的改进
-- 完善故障排除指南，增加 PowerShell 相关问题诊断
-- 新增虚拟桌面管理调试日志功能说明
+- 新增IDE工作区发现功能章节，详细说明智能工作区检测机制
+- 增强路径解析算法说明，反映IDE工作区优先级搜索
+- 更新调试日志功能，新增虚拟桌面管理调试支持
+- 完善故障排除指南，增加IDE工作区发现相关问题诊断
+- 优化架构概览图，展示新的工作区发现流程
 
 ## 目录
 1. [简介](#简介)
@@ -31,11 +32,12 @@
 3. [核心组件](#核心组件)
 4. [架构概览](#架构概览)
 5. [详细组件分析](#详细组件分析)
-6. [热键命令支持](#热键命令支持)
-7. [依赖关系分析](#依赖关系分析)
-8. [性能考虑](#性能考虑)
-9. [故障排除指南](#故障排除指南)
-10. [结论](#结论)
+6. [IDE工作区发现功能](#ide工作区发现功能)
+7. [热键命令支持](#热键命令支持)
+8. [依赖关系分析](#依赖关系分析)
+9. [性能考虑](#性能考虑)
+10. [故障排除指南](#故障排除指南)
+11. [结论](#结论)
 
 ## 简介
 
@@ -46,11 +48,13 @@ DevTools VS Code 开发者工具集成系统是一个基于 Chrome 扩展和 Aut
 - **多平台支持**：支持 Windows、macOS 和 Linux 系统
 - **虚拟桌面集成**：智能激活目标 IDE 窗口，支持 Windows 虚拟桌面环境
 - **路径解析优化**：智能解析相对路径，支持多种项目结构
+- **IDE工作区发现**：自动检测已打开的IDE工作区，优先在当前工作区中搜索文件
 - **热键命令支持**：提供键盘快捷键快速访问功能
+- **增强调试能力**：新增虚拟桌面管理和窗口激活的详细调试日志
 
 该系统通过三个主要组件协同工作：Chrome DevTools 扩展、Node.js 原生主机和 AutoHotkey 辅助工具。
 
-**更新** 系统现已简化原生主机实现，移除了复杂的 PowerShell 逻辑，改用更直接的 CLI 调用方式，显著提升了可靠性和系统复杂度。同时增强了错误处理和调试能力，新增了虚拟桌面管理的调试日志功能。
+**更新** 系统现已实现IDE工作区发现功能，能够智能检测当前桌面上已打开的IDE工作区，并在这些工作区中优先搜索文件，显著提升了文件定位的准确性和速度。同时增强了调试能力，新增了虚拟桌面管理的详细日志记录功能。
 
 ## 项目结构
 
@@ -81,12 +85,13 @@ D --> D2[run_DMS.ps1]
 end
 A5 --> A6[host.js]
 A5 --> A7[install-native-host.ps1]
+A5 --> A8[README.md]
 ```
 
 **图表来源**
 - [manifest.json:1-32](file://devtools-vscode-opener/manifest.json#L1-L32)
 - [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
-- [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
+- [host.js:1-255](file://devtools-vscode-opener/native-host/host.js#L1-L255)
 
 **章节来源**
 - [README.md:1-2](file://README.md#L1-L2)
@@ -116,7 +121,8 @@ A5 --> A7[install-native-host.ps1]
 
 智能路径解析和跨平台 IDE 启动机制：
 
-- **路径解析算法**：支持相对路径、绝对路径和项目根目录查找
+- **IDE工作区发现**：自动检测当前桌面上已打开的IDE工作区，优先在这些工作区中搜索文件
+- **改进的路径解析算法**：支持IDE工作区优先级搜索、相对路径、绝对路径和项目根目录查找
 - **IDE 启动策略**：支持 VS Code、Qoder 等多种 IDE
 - **窗口管理**：智能激活目标 IDE 窗口，支持虚拟桌面
 - **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作
@@ -124,11 +130,11 @@ A5 --> A7[install-native-host.ps1]
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
 - [devtools.js:1-151](file://devtools-vscode-opener/devtools.js#L1-L151)
-- [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
+- [host.js:1-255](file://devtools-vscode-opener/native-host/host.js#L1-L255)
 
 ## 架构概览
 
-系统采用分层架构设计，实现了松耦合的组件间通信。经过简化后，原生主机实现更加直接高效：
+系统采用分层架构设计，实现了松耦合的组件间通信。经过增强后，新增了IDE工作区发现功能：
 
 ```mermaid
 sequenceDiagram
@@ -141,6 +147,8 @@ DevTools->>Background : INIT连接请求
 Background->>DevTools : PONG响应
 DevTools->>Background : OPEN_VSCODE请求
 Background->>NativeHost : 发送原生消息
+NativeHost->>NativeHost : findIdeWorkspaces()检测工作区
+NativeHost->>NativeHost : resolveFilePath()优先搜索工作区
 NativeHost->>PowerShell : 直接CLI调用
 PowerShell->>PowerShell : 执行VDM激活逻辑
 PowerShell->>IDE : 启动IDE并定位文件
@@ -153,6 +161,7 @@ Note over NativeHost : 记录调试日志到 ide-vdm-debug.log
 **图表来源**
 - [background.js:6-38](file://devtools-vscode-opener/background.js#L6-L38)
 - [devtools.js:115-126](file://devtools-vscode-opener/devtools.js#L115-L126)
+- [host.js:13-49](file://devtools-vscode-opener/native-host/host.js#L13-L49)
 
 ### 数据流架构
 
@@ -161,18 +170,21 @@ flowchart TD
 A[用户选择源码文件] --> B[DevTools面板捕获事件]
 B --> C[获取文件URL和光标位置]
 C --> D[解析为本地文件路径]
-D --> E[准备原生消息]
-E --> F[发送到原生主机]
-F --> G[直接CLI调用PowerShell]
-G --> H[执行VDM激活和文件定位]
-H --> I[生成调试日志]
-I --> J[返回执行结果]
-J --> K[更新UI状态]
+D --> E[findIdeWorkspaces()检测IDE工作区]
+E --> F[resolveFilePath()优先搜索工作区]
+F --> G[准备原生消息]
+G --> H[发送到原生主机]
+H --> I[直接CLI调用PowerShell]
+I --> J[执行VDM激活和文件定位]
+J --> K[生成调试日志]
+K --> L[返回执行结果]
+L --> M[更新UI状态]
 ```
 
 **图表来源**
 - [devtools.js:115-126](file://devtools-vscode-opener/devtools.js#L115-L126)
 - [host.js:139-151](file://devtools-vscode-opener/native-host/host.js#L139-L151)
+- [host.js:53-112](file://devtools-vscode-opener/native-host/host.js#L53-L112)
 
 ## 详细组件分析
 
@@ -193,11 +205,15 @@ C --> G[标准化路径格式]
 D --> G
 E --> G
 F --> G
-G --> H[返回本地路径]
+G --> H[findIdeWorkspaces()检测工作区]
+H --> I[resolveFilePath()优先搜索工作区]
+I --> J[返回本地路径]
 ```
 
 **图表来源**
 - [devtools.js:33-51](file://devtools-vscode-opener/devtools.js#L33-L51)
+- [host.js:13-49](file://devtools-vscode-opener/native-host/host.js#L13-L49)
+- [host.js:53-112](file://devtools-vscode-opener/native-host/host.js#L53-L112)
 
 #### 光标位置获取机制
 
@@ -212,12 +228,32 @@ G --> H[返回本地路径]
 
 ### 原生主机组件
 
-**更新** 原生主机实现已简化，移除了复杂的 PowerShell 逻辑，采用更直接的 CLI 调用方式：
+**更新** 原生主机实现已增强，新增了IDE工作区发现功能：
 
-#### 简化后的路径解析优化算法
+#### IDE工作区发现功能
+
+系统实现了智能的IDE工作区检测机制，能够自动发现当前桌面上已打开的IDE工作区：
+
+```mermaid
+flowchart TD
+A[findIdeWorkspaces()调用] --> B{检查平台类型}
+B --> |Windows| C[执行PowerShell命令]
+B --> |其他平台| D[返回空数组]
+C --> E[获取IDE进程列表]
+E --> F[提取命令行参数]
+F --> G[解析工作区路径]
+G --> H[验证路径有效性]
+H --> I[返回唯一工作区列表]
+```
+
+**图表来源**
+- [host.js:13-49](file://devtools-vscode-opener/native-host/host.js#L13-L49)
+
+#### 改进后的路径解析优化算法
 
 原生主机实现了高效的路径解析算法，支持以下特性：
 
+- **IDE工作区优先级**：自动识别当前桌面上已打开的IDE工作区，优先在这些工作区中搜索文件
 - **项目根目录检测**：自动识别 package.json、.git 等项目标识
 - **多盘符支持**：支持 C:/D: 盘符互换
 - **智能候选搜索**：在用户主目录和常见开发目录中搜索
@@ -225,9 +261,12 @@ G --> H[返回本地路径]
 ```mermaid
 classDiagram
 class PathResolver {
-+resolveFilePath(inputPath) string
++resolveFilePath(inputPath, ideProcessName) string
 +findProjectRoot(filePath) string
 +searchCandidates() Set
+}
+class IDEWorkspaceFinder {
++findIdeWorkspaces(processName) string[]
 }
 class IDELauncher {
 +activateIdeWindow(processName, projectDir) string
@@ -239,17 +278,18 @@ class VirtualDesktopManager {
 +activateIdeWindow(processName, projectDir) string
 +reactivateWindow(hwnd) void
 }
+PathResolver --> IDEWorkspaceFinder : "检测IDE工作区"
 PathResolver --> IDELauncher : "提供路径解析"
 IDELauncher --> VirtualDesktopManager : "管理窗口激活"
 ```
 
 **图表来源**
-- [host.js:9-56](file://devtools-vscode-opener/native-host/host.js#L9-L56)
+- [host.js:53-112](file://devtools-vscode-opener/native-host/host.js#L53-L112)
 - [host.js:139-151](file://devtools-vscode-opener/native-host/host.js#L139-L151)
 
 #### 直接 CLI 调用实现
 
-**新增** 系统现在使用直接的 PowerShell CLI 调用方式替代复杂的内联脚本：
+**更新** 系统现在使用直接的 PowerShell CLI 调用方式替代复杂的内联脚本：
 
 - **简化调用**：通过 `pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File` 直接执行生成的 PowerShell 脚本
 - **临时文件管理**：创建临时 .ps1 文件并在执行后清理
@@ -258,7 +298,7 @@ IDELauncher --> VirtualDesktopManager : "管理窗口激活"
 - **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作详情
 
 **章节来源**
-- [host.js:1-188](file://devtools-vscode-opener/native-host/host.js#L1-L188)
+- [host.js:1-255](file://devtools-vscode-opener/native-host/host.js#L1-L255)
 
 ### 源码面板桥接组件
 
@@ -346,6 +386,59 @@ ChromeAppMgr --> AppLauncher : "依赖应用启动"
 **章节来源**
 - [AppLauncher.ahk:1-146](file://lib/AppLauncher.ahk#L1-L146)
 - [ChromeAppMgr.ahk:1-321](file://lib/ChromeAppMgr.ahk#L1-L321)
+
+## IDE工作区发现功能
+
+**新增** 系统现在提供智能的IDE工作区发现功能，能够自动检测当前桌面上已打开的IDE工作区：
+
+### 工作区发现机制
+
+```mermaid
+flowchart TD
+A[findIdeWorkspaces()调用] --> B{检查平台类型}
+B --> |Windows| C[执行PowerShell命令]
+B --> |其他平台| D[返回空数组]
+C --> E[Get-Process获取IDE进程]
+E --> F[遍历进程命令行参数]
+F --> G[正则表达式提取工作区路径]
+G --> H[验证路径存在性和有效性]
+H --> I[去重并返回工作区列表]
+```
+
+**图表来源**
+- [host.js:13-49](file://devtools-vscode-opener/native-host/host.js#L13-L49)
+
+### 工作区优先级搜索
+
+系统在路径解析过程中优先搜索IDE工作区中的文件：
+
+```mermaid
+flowchart TD
+A[resolveFilePath()调用] --> B[检测IDE工作区]
+B --> C[在工作区中搜索文件]
+C --> |找到文件| D[返回工作区文件路径]
+C --> |未找到文件| E[搜索候选目录]
+E --> F[在候选目录中搜索文件]
+F --> |找到文件| G[返回候选目录文件路径]
+F --> |未找到文件| H[返回空字符串]
+```
+
+**图表来源**
+- [host.js:53-112](file://devtools-vscode-opener/native-host/host.js#L53-L112)
+
+### 工作区发现算法
+
+系统实现了高效的IDE工作区检测算法：
+
+- **进程扫描**：使用 Get-Process 命令扫描指定进程名的IDE进程
+- **命令行解析**：从进程命令行参数中提取工作区路径
+- **路径验证**：验证提取的路径存在且为目录
+- **去重处理**：确保返回唯一的工作区列表
+- **错误处理**：优雅处理PowerShell执行异常
+
+**章节来源**
+- [host.js:13-49](file://devtools-vscode-opener/native-host/host.js#L13-L49)
+- [host.js:53-112](file://devtools-vscode-opener/native-host/host.js#L53-L112)
 
 ## 热键命令支持
 
@@ -436,6 +529,7 @@ I --> F
 - **DevTools 与桥接**：通过 HTTP API 和 CDP 协议实现松耦合
 - **路径解析与 IDE 启动**：通过统一的接口抽象实现解耦
 - **热键与扩展**：通过 Chrome commands API 实现独立的功能模块
+- **工作区发现与路径解析**：通过模块化设计实现功能分离
 
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
@@ -479,8 +573,9 @@ J --> K[最终失败]
 - **命令行参数适配**：根据操作系统选择合适的启动命令
 - **权限管理**：通过任务计划程序实现普通权限启动
 - **PowerShell 兼容性**：支持不同版本的 PowerShell 执行策略
+- **工作区发现平台限制**：仅在Windows平台上启用IDE工作区发现功能
 
-**更新** 简化后的实现减少了 PowerShell 复杂性，提升了跨平台稳定性。
+**更新** 增强后的实现减少了PowerShell复杂性，提升了跨平台稳定性。
 
 ## 故障排除指南
 
@@ -545,25 +640,47 @@ J --> K[最终失败]
    - 验证日志文件写入权限
    - 分析 VDM 操作记录和错误信息
 
+#### IDE工作区发现问题
+
+**新增** 由于实现了IDE工作区发现功能：
+
+5. **工作区检测失败**
+   - 检查PowerShell执行权限
+   - 验证IDE进程名称匹配
+   - 确认工作区路径有效
+   - 分析PowerShell命令执行结果
+
+6. **工作区搜索不准确**
+   - 检查工作区路径解析正则表达式
+   - 验证命令行参数格式
+   - 确认工作区目录存在且可访问
+   - 分析工作区去重逻辑
+
+7. **路径解析性能问题**
+   - 检查工作区数量是否过多
+   - 验证候选目录搜索范围
+   - 确认文件系统访问权限
+   - 分析BFS搜索算法效率
+
 #### 原生主机简化问题
 
-**新增** 由于实现了更直接的 CLI 调用方式：
+**更新** 由于实现了更直接的 CLI 调用方式：
 
-5. **CLI 调用超时**
+8. **CLI 调用超时**
    - 检查 PowerShell 执行策略
    - 验证临时目录权限
    - 确认没有防病毒软件拦截
    - 查看 10 秒超时限制
 
-6. **临时文件清理失败**
+9. **临时文件清理失败**
    - 检查文件锁定情况
    - 验证磁盘空间充足
    - 确认没有权限问题
 
-7. **VDM 激活失败**
-   - 检查 Windows 虚拟桌面功能
-   - 验证 IDE 进程名称匹配
-   - 分析 ide-vdm-debug.log 中的 VDM 错误
+10. **VDM 激活失败**
+    - 检查 Windows 虚拟桌面功能
+    - 验证 IDE 进程名称匹配
+    - 分析 ide-vdm-debug.log 中的 VDM 错误
 
 **章节来源**
 - [install-native-host.ps1:1-58](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L58)
@@ -578,8 +695,9 @@ J --> K[最终失败]
 - **错误追踪**：完整的错误堆栈信息
 - **PowerShell 日志**：新增的 ide-vdm-debug.log 文件用于 VDM 激活调试
 - **CDP 调试**：桥接服务的健康检查和错误信息
+- **工作区发现日志**：PowerShell命令执行结果和工作区路径解析详情
 
-**更新** 新增了 PowerShell 执行日志文件，便于调试虚拟桌面管理和窗口激活问题。
+**更新** 新增了IDE工作区发现和虚拟桌面管理的详细日志功能，便于问题排查。
 
 **章节来源**
 - [devtools.js:125-126](file://devtools-vscode-opener/devtools.js#L125-L126)
@@ -587,17 +705,19 @@ J --> K[最终失败]
 
 ## 结论
 
-DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备的开发工具集。经过全面改进后，系统的主要优势进一步增强：
+DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备的开发工具集。经过全面增强后，系统的主要优势进一步提升：
 
 ### 技术优势
 
 - **架构设计**：采用分层架构，组件职责明确，易于维护和扩展
 - **跨平台支持**：通过原生主机实现跨平台兼容性
 - **智能路径解析**：高效的路径解析算法支持多种开发场景
+- **IDE工作区发现**：智能检测当前桌面上已打开的IDE工作区，优先在这些工作区中搜索文件
 - **性能优化**：合理的超时控制和资源管理机制
 - **简化实现**：移除复杂 PowerShell 逻辑，提升系统可靠性
 - **热键支持**：完整的键盘快捷键功能
 - **增强调试**：新增虚拟桌面调试日志功能
+- **工作区优先搜索**：显著提升文件定位的准确性和速度
 
 ### 用户价值
 
@@ -607,6 +727,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **增强开发灵活性**：支持多种 IDE 和开发环境
 - **提高系统稳定性**：简化的实现减少了潜在故障点
 - **快捷键访问**：通过热键快速访问核心功能
+- **智能工作区检测**：自动识别已打开的工作区，提升文件搜索准确性
 
 ### 扩展性考虑
 
@@ -618,7 +739,8 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **监控机制**：完善的日志和诊断功能
 - **PowerShell 调试**：新增的日志文件便于问题排查
 - **热键扩展**：可扩展的快捷键系统支持更多功能
+- **工作区发现扩展**：可扩展的工作区检测机制支持更多IDE
 
-**更新** 简化后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的直接 CLI 调用方式使得 PowerShell 依赖更加明确，便于用户理解和故障排除。新增的热键命令支持和调试日志功能进一步优化了用户体验。
+**更新** 增强后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的IDE工作区发现功能通过智能检测当前桌面上已打开的IDE工作区，显著提升了文件定位的准确性和速度。新增的调试日志功能进一步优化了用户体验，便于用户理解和故障排除。
 
-该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。简化的实现不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。
+该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。简化的实现不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。新增的IDE工作区发现功能体现了系统对开发者工作流程的深入理解和优化，真正做到了以用户为中心的设计理念。

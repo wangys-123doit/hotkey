@@ -1056,7 +1056,7 @@ A_Programs: 当前用户开始菜单程序目录
     ToggleWindow(ahk_exe, APP_PATH)
 }
 
-^#F11::
+$^!+9::
 {
     ConfirmAndSuspend()
 }

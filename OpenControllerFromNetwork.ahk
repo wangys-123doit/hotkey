@@ -40,7 +40,15 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
     SendEvent "{LWin Down}1{LWin Up}"
 
     if WinWaitActive("ahk_exe idea64.exe", , 2) {
-        SendEvent "^+s^v{Enter}"
+        SendEvent "^+s"
+        ; 用 UIA 等待搜索弹窗中的输入框出现，超时 2 秒
+        try {
+            ideaEl := UIA.ElementFromHandle("ahk_exe idea64.exe")
+            ideaEl.WaitElement({Type:"Edit"}, 2000)
+        } catch {
+            Sleep 400
+        }
+        SendEvent "^v{Enter}"
         return
     }
     ToolTip("未检测到 IDEA 窗口")
