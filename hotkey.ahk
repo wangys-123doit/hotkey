@@ -853,7 +853,7 @@ A_Programs: 当前用户开始菜单程序目录
 }
 
 ; ctrl+space打开vscode
-^space::
+#c::
 {
 	ahk_exe := "Code.exe"
 	APP_PATH := A_Programs "\Visual Studio Code\Visual Studio Code.lnk"
@@ -912,11 +912,10 @@ A_Programs: 当前用户开始菜单程序目录
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
-#c::
+^space::
 {
-	ahk_exe := "Qoder.exe"
-    APP_PATH := A_ProgramsCommon "\Qoder\Qoder.lnk"
-
+	ahk_exe := "Qoder IDE.exe"
+    APP_PATH := A_ProgramsCommon "\Qoder\Qoder IDE.lnk"
     hwnd := WinExist("ahk_exe " ahk_exe)
     if hwnd {
         if WinActive("ahk_id " hwnd) {

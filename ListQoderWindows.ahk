@@ -13,7 +13,7 @@ results := []
 total := 0
 onCurrentCount := 0
 
-for exeName in ["Qoder.exe", "Code.exe"] {
+for exeName in ["Qoder IDE.exe", "Code.exe"] {
     winList := WinGetList("ahk_exe " exeName)
     out .= exeName " 窗口数: " winList.Length "`n"
     

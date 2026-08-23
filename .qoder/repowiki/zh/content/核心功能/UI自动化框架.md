@@ -4,9 +4,17 @@
 **本文档引用的文件**
 - [UIA.ahk](file://lib/UIA.ahk)
 - [UIA_Browser.ahk](file://lib/UIA_Browser.ahk)
+- [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
 - [README.md](file://README.md)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 更新了IDEA集成功能，改进了UI自动化元素检测机制
+- 使用UIA.ElementFromHandle替代简单的键盘快捷键序列
+- 增强了IDE搜索对话框处理的可靠性和稳定性
+- 添加了新的UIA元素等待和定位策略
 
 ## 目录
 1. [简介](#简介)
@@ -29,6 +37,7 @@ UI自动化框架的核心目标是：
 - 实现高效的元素缓存机制
 - 提供浏览器自动化扩展
 - 支持屏幕读取器集成
+- **增强IDE集成能力**：通过UIA.ElementFromHandle提供更可靠的IDE窗口元素检测
 
 ## 项目结构
 
@@ -42,6 +51,7 @@ Browser[UIA_Browser.ahk<br/>浏览器扩展]
 end
 subgraph "应用层"
 Hotkey[hotkey.ahk<br/>主脚本]
+NetworkCtrl[OpenControllerFromNetwork.ahk<br/>网络控制器]
 Apps[apps/<br/>示例应用]
 end
 subgraph "工具组件"
@@ -51,12 +61,14 @@ end
 UIA --> Browser
 Hotkey --> UIA
 Hotkey --> Browser
+NetworkCtrl --> UIA
 Browser --> UIA
 ```
 
 **图表来源**
 - [UIA.ahk](file://lib/UIA.ahk)
 - [UIA_Browser.ahk](file://lib/UIA_Browser.ahk)
+- [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
 
 **章节来源**
@@ -75,6 +87,7 @@ UIA主框架提供了完整的Microsoft UI Automation API实现，包括：
 - **条件构建器**：提供灵活的元素查找条件
 - **缓存机制**：高效的元素属性缓存系统
 - **事件处理**：完整的UIA事件监听和处理
+- **增强的元素定位**：支持ElementFromHandle等高级API
 
 #### 关键API接口
 
@@ -98,6 +111,7 @@ class IUIAutomationElement {
 +Click() void
 +FindElement() IUIAutomationElement
 +FindElements() array
++WaitElement(condition, timeout) IUIAutomationElement
 +BuildUpdatedCache() IUIAutomationElement
 }
 class IUIAutomationCacheRequest {
@@ -118,6 +132,42 @@ IUIAutomationElement --> IUIAutomationCacheRequest
 **章节来源**
 - [UIA.ahk:1-100](file://lib/UIA.ahk#L1-L100)
 - [UIA.ahk:51-150](file://lib/UIA.ahk#L51-L150)
+
+### IDEA集成功能增强
+
+**新增** OpenControllerFromNetwork.ahk中的IDEA集成功能得到了显著增强，采用了更可靠的UIA元素检测机制：
+
+#### 改进的IDEA搜索对话框处理流程
+
+```mermaid
+sequenceDiagram
+participant User as 用户
+participant Script as OpenControllerFromNetwork
+participant UIA as UIA框架
+participant IDEA as IDEA窗口
+User->>Script : 触发Alt+U热键
+Script->>IDEA : 发送Win+1切换到IDEA
+Script->>IDEA : 发送Ctrl+Shift+S打开搜索
+Script->>UIA : ElementFromHandle("ahk_exe idea64.exe")
+UIA-->>Script : 返回IDEA根元素
+Script->>UIA : WaitElement({Type : "Edit"}, 2000)
+UIA-->>Script : 等待输入框出现
+Script->>IDEA : 粘贴URL并回车
+Script-->>User : 完成IDEA导航
+```
+
+**图表来源**
+- [OpenControllerFromNetwork.ahk:42-56](file://OpenControllerFromNetwork.ahk#L42-L56)
+
+#### 增强的可靠性特性
+
+1. **UIA元素检测**：使用`UIA.ElementFromHandle()`替代简单的窗口检测
+2. **智能等待机制**：通过`WaitElement()`方法等待特定类型的元素出现
+3. **异常处理**：包含try-catch块确保即使UIA检测失败也能继续执行
+4. **超时控制**：设置合理的超时时间避免无限等待
+
+**章节来源**
+- [OpenControllerFromNetwork.ahk:42-56](file://OpenControllerFromNetwork.ahk#L42-L56)
 
 ### 浏览器自动化扩展
 
@@ -148,6 +198,7 @@ graph TD
 subgraph "应用层"
 AHK[AutoHotkey v2<br/>脚本引擎]
 Scripts[用户脚本<br/>hotkey.ahk]
+NetworkCtrl[网络控制器<br/>OpenControllerFromNetwork.ahk]
 end
 subgraph "UIA框架层"
 Core[UIA核心<br/>UIA.ahk]
@@ -160,8 +211,10 @@ COM[COM接口]
 Windows[Windows API]
 end
 AHK --> Scripts
+AHK --> NetworkCtrl
 Scripts --> Core
 Scripts --> Browser
+NetworkCtrl --> Core
 Core --> UIA_API
 Browser --> Core
 Core --> COM
@@ -172,6 +225,7 @@ COM --> Windows
 **图表来源**
 - [hotkey.ahk:1-10](file://hotkey.ahk#L1-L10)
 - [UIA.ahk:1-50](file://lib/UIA.ahk#L1-L50)
+- [OpenControllerFromNetwork.ahk:1-50](file://OpenControllerFromNetwork.ahk#L1-L50)
 
 ## 详细组件分析
 
@@ -199,9 +253,9 @@ UIA-->>Script : 返回可用的UIA实例
 **图表来源**
 - [UIA.ahk:60-138](file://lib/UIA.ahk#L60-L138)
 
-#### 元素定位策略
+#### 增强的元素定位策略
 
-UIA框架提供了多种元素定位方法，每种都有其特定的使用场景：
+**更新** UIA框架现在提供了更强大的元素定位方法，特别是针对IDE应用的优化：
 
 ```mermaid
 flowchart TD
@@ -210,7 +264,10 @@ Method --> |句柄| Handle[ElementFromHandle<br/>通过窗口句柄定位]
 Method --> |坐标| Point[ElementFromPoint<br/>通过屏幕坐标定位]
 Method --> |焦点| Focus[GetFocusedElement<br/>定位当前焦点元素]
 Method --> |路径| Path[ElementFromPath<br/>通过路径定位]
-Handle --> Cache{是否需要缓存}
+Handle --> IDECheck{是否IDE应用?}
+IDECheck --> |是| IDEOptimize[IDE专用优化<br/>激活辅助功能]
+IDECheck --> |否| Cache{是否需要缓存}
+IDEOptimize --> Cache
 Point --> Cache
 Focus --> Cache
 Path --> Cache
@@ -227,6 +284,39 @@ Direct --> Return
 **章节来源**
 - [UIA.ahk:945-1009](file://lib/UIA.ahk#L945-L1009)
 - [UIA.ahk:1104-1127](file://lib/UIA.ahk#L1104-L1127)
+
+### 增强的IDE集成工作流
+
+**新增** 基于UIA.ElementFromHandle的IDE集成工作流提供了更高的可靠性：
+
+#### IDEA搜索对话框处理流程
+
+```mermaid
+flowchart TD
+Start([IDEA集成启动]) --> SwitchWindow[切换到IDEA窗口]
+SwitchWindow --> OpenSearch[打开搜索对话框]
+OpenSearch --> GetRootEl[获取IDEA根元素]
+GetRootEl --> WaitInput[等待输入框出现]
+WaitInput --> InputURL[输入URL]
+InputURL --> Navigate[导航到目标]
+Navigate --> Complete([完成])
+GetRootEl --> TryCatch{UIA检测成功?}
+TryCatch --> |否| FallbackSleep[回退到延迟等待]
+FallbackSleep --> InputURL
+TryCatch --> |是| WaitInput
+```
+
+**图表来源**
+- [OpenControllerFromNetwork.ahk:42-56](file://OpenControllerFromNetwork.ahk#L42-L56)
+
+#### 错误处理和容错机制
+
+1. **UIA异常捕获**：当UIA元素检测失败时自动回退
+2. **延迟重试机制**：提供额外的等待时间确保元素可用性
+3. **用户体验优化**：显示友好的提示信息
+
+**章节来源**
+- [OpenControllerFromNetwork.ahk:42-56](file://OpenControllerFromNetwork.ahk#L42-L56)
 
 ### 事件处理机制
 
@@ -322,6 +412,7 @@ Level3 --> Type3
 2. **批量操作**：支持批量元素查找和操作
 3. **延迟加载**：按需加载元素属性
 4. **内存管理**：自动释放不再使用的资源
+5. **IDE专用优化**：针对IDE应用的特殊缓存策略
 
 **章节来源**
 - [UIA.ahk:1145-1183](file://lib/UIA.ahk#L1145-L1183)
@@ -388,6 +479,8 @@ UIA_Framework[UIA框架] --> Browser_Extension[浏览器扩展]
 UIA_Framework --> Utils[工具组件]
 Browser_Extension --> UIA_Framework
 Utils --> UIA_Framework
+NetworkCtrl[网络控制器] --> UIA_Framework
+IDE_Integration[IDE集成] --> UIA_Framework
 subgraph "浏览器扩展内部结构"
 Chrome[Chrome支持]
 Firefox[Firefox支持]
@@ -402,6 +495,7 @@ Browser_Extension --> Common
 
 **图表来源**
 - [UIA_Browser.ahk:458-488](file://lib/UIA_Browser.ahk#L458-L488)
+- [OpenControllerFromNetwork.ahk:45-50](file://OpenControllerFromNetwork.ahk#L45-L50)
 
 **章节来源**
 - [hotkey.ahk:3-6](file://hotkey.ahk#L3-L6)
@@ -416,6 +510,7 @@ Browser_Extension --> Common
 1. **条件预编译**：将复杂的查找条件预编译为UIA条件对象
 2. **缓存策略**：根据使用频率智能缓存元素属性
 3. **批量操作**：支持批量元素查找和操作减少API调用次数
+4. **IDE专用优化**：针对IDE应用的快速路径查找
 
 #### 内存管理
 
@@ -441,6 +536,7 @@ Browser_Extension --> Common
 1. 元素尚未加载完成
 2. 条件过于严格
 3. 应用程序使用非标准UIA实现
+4. **IDE窗口未正确激活**
 
 **解决方案**：
 ```autohotkey
@@ -453,7 +549,23 @@ element := parentElement.FindElement({Type:"Button"}, 4)
 ; 检查元素是否存在
 if element := parentElement.ElementExist({Name:"目标元素"})
     ; 执行操作
+
+; IDEA专用：使用ElementFromHandle
+ideaEl := UIA.ElementFromHandle("ahk_exe idea64.exe")
+inputEl := ideaEl.WaitElement({Type:"Edit"}, 2000)
 ```
+
+#### IDEA集成问题
+
+**新增** IDEA集成功能的常见问题：
+
+**问题描述**：IDEA搜索对话框无法正确识别
+
+**解决方案**：
+1. 确保IDEA窗口已完全激活
+2. 检查UIA辅助功能是否正确启用
+3. 验证搜索对话框已正确打开
+4. 使用try-catch块处理异常情况
 
 #### 事件处理问题
 
@@ -467,6 +579,7 @@ if element := parentElement.ElementExist({Name:"目标元素"})
 **章节来源**
 - [UIA.ahk:2759-2804](file://lib/UIA.ahk#L2759-L2804)
 - [UIA.ahk:1297-1333](file://lib/UIA.ahk#L1297-L1333)
+- [OpenControllerFromNetwork.ahk:45-50](file://OpenControllerFromNetwork.ahk#L45-L50)
 
 ### 错误处理最佳实践
 
@@ -511,6 +624,7 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 3. **浏览器扩展支持**：专门针对现代浏览器的自动化需求
 4. **屏幕读取器集成**：确保了无障碍访问的兼容性
 5. **灵活的事件处理**：支持多种类型的UIA事件监听
+6. **增强的IDE集成**：通过UIA.ElementFromHandle提供更可靠的IDE应用支持
 
 ### 技术特色
 
@@ -518,6 +632,7 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 - **高性能设计**：通过智能缓存和优化算法提升执行效率
 - **易于使用**：提供了简洁的API接口和丰富的示例代码
 - **稳定可靠**：完善的错误处理和资源管理机制
+- **IDE专用优化**：针对IDE应用的特殊优化和容错机制
 
 ### 应用场景
 
@@ -527,5 +642,14 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 - 屏幕读取器辅助工具
 - 界面元素监控和数据分析
 - 跨平台应用程序控制
+- **IDE开发工作流集成**：与IDEA等开发工具的无缝集成
 
-通过合理使用这个框架，开发者可以高效地实现各种UI自动化需求，同时保持代码的可维护性和性能表现。
+### 最新改进
+
+**新增** 通过OpenControllerFromNetwork.ahk中的IDEA集成功能增强，框架现在能够：
+- 使用UIA.ElementFromHandle进行更可靠的IDE窗口检测
+- 通过WaitElement方法智能等待IDE对话框元素
+- 提供更好的异常处理和容错机制
+- 显著提升IDE搜索对话框处理的稳定性和可靠性
+
+通过合理使用这个框架，开发者可以高效地实现各种UI自动化需求，同时保持代码的可维护性和性能表现。特别是在IDE集成方面，新的UIA元素检测机制为开发工作流自动化提供了更强的支持。

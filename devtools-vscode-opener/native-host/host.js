@@ -59,7 +59,7 @@ function resolveFilePath(inputPath, ideProcessName) {
   const skip = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.vscode']);
 
   // Priority 1: Search in IDE workspace directories (already-open projects on current desktop)
-  const workspaces = findIdeWorkspaces(ideProcessName || 'Qoder');
+  const workspaces = findIdeWorkspaces(ideProcessName || 'Qoder IDE');
   for (const ws of workspaces) {
     const full = path.join(ws, rel);
     if (fs.existsSync(full)) return path.normalize(full);
@@ -125,7 +125,8 @@ function findProjectRoot(filePath) {
 // ─── Open File (VDM activate + clipboard + Quick Open, single pwsh) ──
 
 function openFile(file, line, col, ide) {
-  const processName = ide === 'qoder' ? 'Qoder' : 'code';
+  // Qoder 1.25+ uses "Qoder IDE.exe" for the GUI process.
+  const processName = ide === 'qoder' ? 'Qoder IDE' : 'code';
   const resolved = resolveFilePath(file, processName);
   if (!resolved) throw new Error(`cannot resolve: ${file}`);
 
@@ -184,7 +185,7 @@ function openFile(file, line, col, ide) {
     '      return true;',
     '    },IntPtr.Zero);',
     '    IntPtr pick=best!=IntPtr.Zero?best:fb;',
-    '    if(pick==IntPtr.Zero) { log.Add("NO_MATCH"); try{File.AppendAllLines(logF,log);}catch{} return ""; }',
+    '    if(pick==IntPtr.Zero) { log.Add("NO_MATCH proc="+proc+" project="+proj); try{File.AppendAllLines(logF,log);}catch{} return ""; }',
     '    ShowWindow(pick,IsIconic(pick)?3:5);',
     '    keybd_event(0x12,0,0,UIntPtr.Zero); keybd_event(0x12,0,2,UIntPtr.Zero);',
     '    SetForegroundWindow(pick);',
@@ -211,7 +212,9 @@ Add-Type @"\n${cs}\n"@
   const tmp = path.join(os.tmpdir(), `ide-open-${Date.now()}.ps1`);
   try {
     fs.writeFileSync(tmp, ps, 'utf8');
-    execSync(`pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmp}"`, { timeout: 10000 });
+    const result = execSync(`pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmp}"`, { encoding: 'utf8', timeout: 10000 }).trim();
+    if (!result)
+      throw new Error(`no ${ide} window on the current virtual desktop`);
   } finally {
     try { fs.unlinkSync(tmp); } catch {}
   }

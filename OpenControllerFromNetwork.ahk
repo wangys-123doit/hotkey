@@ -297,16 +297,31 @@ GetWindowDesktopId(hwnd) {
     if !hwnd
         return ""
     try {
-        vdm := ComObject("{AA509086-5CA9-4C25-8F95-589D3C07B48A}", "{F3163840-895E-45CF-8C8B-37F5E93E22FC}")
+        vdm := ComObject("{AA509086-5CA9-4C25-8F95-589D3C07B48A}", "{A5CD92FF-29BE-454C-8D04-D82879FB3F1B}")
         ; IVirtualDesktopManager.GetWindowDesktopId(hwnd, &desktopId)
         desktopId := Buffer(16)
-        ComCall(5, vdm, "Ptr", hwnd, "Ptr", desktopId)
+        ComCall(4, vdm, "Ptr", hwnd, "Ptr", desktopId)
         ; GUID → 字符串
         buf := Buffer(39 * 2)
         DllCall("ole32\StringFromGUID2", "Ptr", desktopId, "Ptr", buf, "Int", 39)
         return StrGet(buf, "UTF-16")
     } catch {
         return ""
+    }
+}
+
+; 使用 IVirtualDesktopManager 判断窗口是否位于当前虚拟桌面
+IsWindowOnCurrentVirtualDesktop(hwnd) {
+    if !hwnd
+        return false
+
+    try {
+        vdm := ComObject("{AA509086-5CA9-4C25-8F95-589D3C07B48A}", "{A5CD92FF-29BE-454C-8D04-D82879FB3F1B}")
+        onCurrent := 0
+        ComCall(3, vdm, "Ptr", hwnd, "IntP", &onCurrent)
+        return onCurrent != 0
+    } catch {
+        return false
     }
 }
 
@@ -1480,7 +1495,8 @@ OpenInEditor(file, lineNum?, colNum?)
     if editorHwnd {
         ; 用当前桌面窗口的 PID 获取编辑器可执行文件路径
         pid := WinGetPID("ahk_id " editorHwnd)
-        if pid
+        try editorPath := WinGetProcessPath("ahk_id " editorHwnd)
+        if (editorPath = "" && pid)
             editorPath := ProcessPath(pid)
 
         ; 先激活，确保 --reuse-window 复用此窗口
@@ -1497,8 +1513,11 @@ OpenInEditor(file, lineNum?, colNum?)
 
     ; 2. 如果当前桌面没有找到，回退：检测任何桌面是否有编辑器
     if editorPath = "" {
-        if WinExist("ahk_exe Qoder.exe") {
-            editorPath := ProcessPath(WinGetPID("ahk_exe Qoder.exe"))
+        qoderHwnd := WinExist("ahk_exe Qoder IDE.exe")
+        if !qoderHwnd
+            qoderHwnd := WinExist("ahk_exe Qoder.exe")
+        if qoderHwnd {
+            editorPath := ProcessPath(WinGetPID("ahk_id " qoderHwnd))
             ToolTip("[OpenInEditor] 回退: 使用其他桌面的 Qoder path=" editorPath)
             SetTimer(() => ToolTip(), -5000)
         } else if WinExist("ahk_exe Code.exe") {
@@ -1514,6 +1533,9 @@ OpenInEditor(file, lineNum?, colNum?)
         return
     }
 
+    ; Qoder IDE.exe 是 GUI 进程，跳转参数必须交给 bin\qoder.cmd
+    editorCliPath := GetEditorCliPath(editorPath)
+
     ; 3. 拼接命令行参数: --reuse-window --goto file:line:column
     args := "--reuse-window"
     if IsSet(lineNum) && lineNum {
@@ -1528,13 +1550,26 @@ OpenInEditor(file, lineNum?, colNum?)
 
     ToolTip("打开: " file (lineNum ? " (" lineNum ":" (colNum ? colNum : "") ")" : ""))
     SetTimer(() => ToolTip(), -3000)
-    Run Format('"{1}" {2}', editorPath, args)
+    Run Format('"{1}" {2}', editorCliPath, args)
+}
+
+; 获取编辑器 CLI 入口。Qoder 新版不再由 GUI 主程序直接处理 --goto。
+GetEditorCliPath(editorPath)
+{
+    SplitPath(editorPath, &editorName, &editorDir)
+    if (StrLower(editorName) = "qoder ide.exe") {
+        qoderCliPath := editorDir "\bin\qoder.cmd"
+        if FileExist(qoderCliPath)
+            return qoderCliPath
+    }
+
+    return editorPath
 }
 
 ; 获取当前虚拟桌面上 Qoder 或 VS Code 的窗口句柄
 ; 使用 DWMWA_CLOAKED 检测当前桌面窗口
 GetEditorHwndOnCurrentDesktop() {
-    for exeName in ["Qoder.exe", "Code.exe"] {
+    for exeName in ["Qoder IDE.exe", "Qoder.exe", "Code.exe"] {
         winList := WinGetList("ahk_exe " exeName)
         for hwnd in winList {
             ; 过滤无标题窗口
@@ -1542,11 +1577,7 @@ GetEditorHwndOnCurrentDesktop() {
             try title := WinGetTitle("ahk_id " hwnd)
             if !title
                 continue
-            ; DWMWA_CLOAKED: 非当前桌面的窗口 cloaked=1
-            buf := Buffer(4, 0)
-            hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
-            cloaked := NumGet(buf, 0, "Int")
-            if (hr = 0 && !cloaked)
+            if IsWindowOnCurrentVirtualDesktop(hwnd)
                 return hwnd
         }
     }

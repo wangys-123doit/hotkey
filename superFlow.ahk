@@ -45,7 +45,7 @@ ExtractWithBandizip(targetMode) {
 
 
 ; ^!+1 执行git commit,实现在不同开发工具中触发不同的快捷键（Code.exe 触发 Alt+9，idea64.exe 触发 Ctrl+K）              
-#HotIf WinActive("ahk_exe Code.exe") || WinActive("ahk_exe Qoder.exe")
+#HotIf WinActive("ahk_exe Code.exe") || WinActive("ahk_exe Qoder IDE.exe")
     ^!+1::Send "!9"
 #HotIf
 
