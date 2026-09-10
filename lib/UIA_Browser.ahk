@@ -117,13 +117,12 @@ class UIA_Vivaldi extends UIA_Browser {
 	}
 	GetCurrentMainPaneElement() {
 		this.GetCurrentDocumentElement()
-		this.DialogTreeWalker := UIA.CreateTreeWalker(UIA.CreateAndCondition(UIA.CreatePropertyCondition(UIA.Property.Type, UIA.Type.Group), UIA.CreatePropertyCondition(UIA.Property.AutomationId, "modal-bg")))
 		if !this.HasOwnProp("DocumentElement") && !(this.DocumentElement := this.MainPaneElement)
 			throw TargetError("UIA_Browser was unable to find the Document element for browser. Make sure the browser is at least partially visible or active before calling UIA_Browser()", -2)
 		Loop 2 {
+			local TabElement
 			this.URLEditElement := this.BrowserElement.WaitElement({AutomationId:"urlFieldInput"}, 3000)
 			TabElement := this.BrowserElement.FindElement({AutomationId:"tab-", matchmode:"Substring"})
-			NewTabButton := this.BrowserElement.FindElement({Type:"Button", startingElement:TabElement})
 			try {
 				this.TabBarElement := TabElement.Parent
 				this.NavigationBarElement := this.TabBarElement.Parent
@@ -159,15 +158,17 @@ class UIA_Vivaldi extends UIA_Browser {
 	}
 
 	GetTabs(searchPhrase:="", matchMode:=3, caseSense:=True) {
-		local allTabs := this.GetAllTabs()
-		matchMode := UIA.TypeValidation.MatchMode(matchMode)
+		local allTabs := this.GetAllTabs(), matchedTabs := []
 		if !searchPhrase
 			return allTabs
-		return UIA.Filter(allTabs, (element) => element.ElementExist({Name:searchPhrase, matchMode:matchMode, caseSense:caseSense}))
+		for element in allTabs
+			try if element.ElementExist({Name:searchPhrase, matchMode:matchMode, caseSense:caseSense})
+				matchedTabs.Push(element)
+		return matchedTabs
 	}
 
 	GetTab(searchPhrase:="", matchMode:=3, caseSense:=True) { 
-		local match, els
+		local match := "", els := []
 		if searchPhrase is Integer
 			return this.TabBarElement.FindElement({AutomationId:"tab-", matchmode:"Substring", i:searchPhrase}, 2)
 		if !searchPhrase {
@@ -176,13 +177,17 @@ class UIA_Vivaldi extends UIA_Browser {
 		}
 		if !(tabs := this.GetAllTabs()).Length
 			throw Error("Unable to get tab elements", -1, "Please file a bug report")
-		if !(els := UIA.Filter(tabs, (element) => element.ElementExist({Type:["Text", "TabItem"], Name:searchPhrase, matchMode:matchMode, caseSense:caseSense, scope:3}))).Length
+		els := []
+		for element in tabs
+			try if element.ElementExist({Type:["Text", "TabItem"], Name:searchPhrase, matchMode:matchMode, caseSense:caseSense, scope:3})
+				els.Push(element)
+		if !els.Length
 			throw Error("No search phrase matches found", -1)
 		return els[els.Length]
 	}
 
 	GetAllTabNames() { 
-		local names := [], k, v
+		local names := [], k := 0, v := 0
 		for k, v in this.GetTabs() {
 			names.Push(v.FindElement({Type:["Text", "TabItem"], scope:3}).Name)
 		}
@@ -225,19 +230,27 @@ class UIA_Chrome extends UIA_Browser {
 		if !this.HasOwnProp("DocumentElement")
 			throw TargetError("UIA_Browser was unable to find the Document element for browser. Make sure the browser is at least partially visible or active before calling UIA_Browser()", -2)
 		Loop 2 {
+			this.URLEditElement := 0
+			this.NavigationBarElement := 0
+			this.MainPaneElement := 0
+			this.TabBarElement := 0
+			this.ReloadButton := 0
+			this.ReloadButtonDescription := ""
+			this.ReloadButtonFullDescription := ""
+			this.ReloadButtonName := ""
 			try this.URLEditElement := this.BrowserElement.FindFirst({ClassName:"TopContainerView"}).FindFirstWithOptions(this.EditControlCondition, 2, this.BrowserElement)
 			catch
 				this.URLEditElement := this.BrowserElement.FindFirstWithOptions(this.EditControlCondition, 2, this.BrowserElement)
 			try {
 				if !this.URLEditElement
-					this.URLEditElement := UIA.CreateTreeWalker(this.EditControlCondition).GetLastChildElement(this.BrowserElement)
-				this.NavigationBarElement := UIA.CreateTreeWalker(this.ToolbarControlCondition).GetParentElement(this.URLEditElement)
-				this.MainPaneElement := UIA.TreeWalkerTrue.GetParentElement(this.NavigationBarElement)
+					throw TargetError("Chrome address bar element was not found", -1)
+				this.NavigationBarElement := UIA.CreateTreeWalker(this.ToolbarControlCondition).TryGetParentElement(this.URLEditElement)
 				if !this.NavigationBarElement
 					this.NavigationBarElement := this.BrowserElement
+				this.MainPaneElement := UIA.TreeWalkerTrue.TryGetParentElement(this.NavigationBarElement)
 				if !this.MainPaneElement
 					this.MainPaneElement := this.BrowserElement
-				if !(this.TabBarElement := UIA.CreateTreeWalker(this.TabControlCondition).GetNextSiblingElement(this.NavigationBarElement))
+				if !(this.TabBarElement := UIA.CreateTreeWalker(this.TabControlCondition).TryGetNextSiblingElement(this.NavigationBarElement))
 					this.TabBarElement := this.MainPaneElement
 				this.ReloadButton := "", this.ReloadButtonDescription := "", this.ReloadButtonFullDescription := "", this.ReloadButtonName := ""
 				Loop 2 {
@@ -258,6 +271,24 @@ class UIA_Chrome extends UIA_Browser {
 		}
 		; If all goes well, this part is not reached
 	}
+
+	GetCurrentDocumentElement() {
+		local chromiumElement := 0, documentElement := 0
+		try {
+			UIA.ActivateChromiumAccessibility(this.BrowserId)
+			chromiumElement := UIA.ElementFromChromium(this.BrowserId, 0)
+			if (chromiumElement.Type = UIA.Type.Document)
+				documentElement := chromiumElement
+			else
+				documentElement := chromiumElement.FindElement([{Type:"Document"}, {Type:"Pane"}])
+		}
+		catch {
+			try documentElement := this.BrowserElement.FindElement([{Type:"Document"}, {Type:"Pane"}])
+		}
+		if !documentElement
+			throw TargetError("Chromium document element was not found", -1)
+		return this.DocumentElement := this.CurrentDocumentElement := documentElement
+	}
 }
 
 class UIA_Brave extends UIA_Chrome {
@@ -271,7 +302,7 @@ class UIA_Edge extends UIA_Browser {
 
 	; Refreshes UIA_Browser.MainPaneElement and returns it
 	GetCurrentMainPaneElement() { 
-		local k, v, el, topCoord, bt
+		local k := 0, v := 0, el := 0, topCoord := 10000000, bt := 0
 		this.GetCurrentDocumentElement()
 		if !this.HasOwnProp("DocumentElement")
 			throw TargetError("UIA_Browser was unable to find the Document element for browser. Make sure the browser is at least partially visible or active before calling UIA_Browser()", -2)
@@ -294,7 +325,7 @@ class UIA_Edge extends UIA_Browser {
 					this.NavigationBarElement := this.BrowserElement
 				if !this.MainPaneElement
 					this.MainPaneElement := this.BrowserElement
-				if !(this.TabBarElement := UIA.CreateTreeWalker(this.TabControlCondition).GetNextSiblingElement(this.NavigationBarElement))
+				if !(this.TabBarElement := UIA.CreateTreeWalker(this.TabControlCondition).TryGetNextSiblingElement(this.NavigationBarElement))
 					this.TabBarElement := this.MainPaneElement
 				this.ReloadButton := "", this.ReloadButtonDescription := "", this.ReloadButtonFullDescription := "", this.ReloadButtonName := ""
 				Loop 2 {
@@ -317,10 +348,21 @@ class UIA_Edge extends UIA_Browser {
 	}
 
 	GetCurrentDocumentElement() {
-		local endtime := A_TickCount+3000
-		While A_TickCount < endtime
-			try return this.DocumentElement := this.CurrentDocumentElement := UIA.ElementFromHandle(this.BrowserId).FindFirst(this.DocumentControlCondition,4) ; ElementFromChromium works unreliably
-		throw Error("Unable to get the current Document element", -1)
+		local chromiumElement := 0, documentElement := 0
+		try {
+			UIA.ActivateChromiumAccessibility(this.BrowserId)
+			chromiumElement := UIA.ElementFromChromium(this.BrowserId, 0)
+			if (chromiumElement.Type = UIA.Type.Document)
+				documentElement := chromiumElement
+			else
+				documentElement := chromiumElement.FindElement([{Type:"Document"}, {Type:"Pane"}])
+		}
+		catch {
+			try documentElement := this.BrowserElement.FindElement([{Type:"Document"}, {Type:"Pane"}])
+		}
+		if !documentElement
+			throw TargetError("Chromium document element was not found", -1)
+		return this.DocumentElement := this.CurrentDocumentElement := documentElement
 	}
 }
 
@@ -418,7 +460,7 @@ class UIA_Mozilla extends UIA_Browser {
 	; Gets text from an alert-box
 	GetAlertText(closeAlert:=True, timeOut:=3000) {
 		this.GetCurrentDocumentElement()
-		local startTime := A_TickCount, text := ""
+		local startTime := A_TickCount, text := "", alertEl := 0, dialogEl := 0, OKBut := 0
 		if !(alertEl := UIA.TreeWalkerTrue.GetNextSiblingElement(UIA.TreeWalkerTrue.GetFirstChildElement(this.DocumentPanelElement)))
 			return
 		
@@ -488,7 +530,7 @@ class UIA_Browser {
 	}
 	
 	__Get(member, params) {
-		local err
+		local err := ""
 		if this.HasOwnProp("BrowserElement") {
 			try return this.BrowserElement.%member%
 			catch PropertyError {
@@ -503,7 +545,7 @@ class UIA_Browser {
 	}
 	
 	__Call(member, params) {
-		local err
+		local err := ""
 		if this.HasOwnProp("BrowserElement") {
 			try return this.BrowserElement.%member%(params*)
 			catch MethodError {
@@ -542,14 +584,22 @@ class UIA_Browser {
 		; both in Chrome and edge), or by location (it must be the topmost toolbar). I opted for a 
 		; combination of two, so if finding by name fails, all toolbar elements are evaluated.
 		Loop 2 {
+			this.URLEditElement := 0
+			this.NavigationBarElement := 0
+			this.MainPaneElement := 0
+			this.TabBarElement := 0
+			this.ReloadButton := 0
+			this.ReloadButtonDescription := ""
+			this.ReloadButtonFullDescription := ""
+			this.ReloadButtonName := ""
 			try this.URLEditElement := (this.BrowserType = "Chrome" && this.BrowserElement[1].Type = UIA.Property.Document) ? this.BrowserElement.FindFirstWithOptions(this.EditControlCondition, 2, this.BrowserElement) : this.BrowserElement.FindFirst(this.EditControlCondition)
 			try {
-				if (this.BrowserType = "Chrome") && !this.URLEditElement
-					this.URLEditElement := UIA.CreateTreeWalker(this.EditControlCondition).GetLastChildElement(this.BrowserElement)
-				this.NavigationBarElement := UIA.CreateTreeWalker(this.ToolbarControlCondition).GetParentElement(this.URLEditElement)
-				this.MainPaneElement := UIA.TreeWalkerTrue.GetParentElement(this.NavigationBarElement)
+				if !this.URLEditElement
+					throw TargetError("Browser address bar element was not found", -1)
+				this.NavigationBarElement := UIA.CreateTreeWalker(this.ToolbarControlCondition).TryGetParentElement(this.URLEditElement)
 				if !this.NavigationBarElement
 					this.NavigationBarElement := this.BrowserElement
+				this.MainPaneElement := UIA.TreeWalkerTrue.TryGetParentElement(this.NavigationBarElement)
 				if !this.MainPaneElement
 					this.MainPaneElement := this.BrowserElement
 				if !(this.TabBarElement := UIA.CreateTreeWalker(this.TabControlCondition).GetPreviousSiblingElement(this.NavigationBarElement))
@@ -618,7 +668,7 @@ class UIA_Browser {
 	; Executes Javascript code through the address bar and returns the return value through the browser windows title.
 	JSReturnThroughTitle(js, timeOut:=500) {
 		this.JSExecute("origTitle=document.title;document.title=(" js ");void(0);setTimeout(function() {document.title=origTitle;void(0);}, " timeOut ")")
-		local startTime := A_TickCount, origTitle := WinGetTitle("ahk_id " this.BrowserId), newTitle
+		local startTime := A_TickCount, origTitle := WinGetTitle("ahk_id " this.BrowserId), newTitle := origTitle
 		Loop {
 			newTitle := WinGetTitle("ahk_id " this.BrowserId)
 			Sleep 40
@@ -640,6 +690,7 @@ class UIA_Browser {
 			})()
         )", selector)
         local bounds_str := this.JSReturnThroughClipboard(js)
+		local size := []
         RegexMatch(bounds_str, "`"x`":(\d+).?\d*?,`"y`":(\d+).?\d*?,`"width`":(\d+).?\d*?,`"height`":(\d+).?\d*?", &size)
 		if useRenderWidgetPos {
 			ControlGetPos &win_x, &win_y, &win_w, &win_h, "Chrome_RenderWidgetHostHWND1", this.BrowserId
@@ -669,7 +720,7 @@ class UIA_Browser {
 	
 	; Gets text from an alert-box created with for example javascript:alert('message')
 	GetAlertText(closeAlert:=True, timeOut:=3000) {
-		local startTime := A_TickCount, text := ""
+		local startTime := A_TickCount, text := "", dialogEl := 0, OKBut := 0
 		startTime := A_TickCount
 		while ((A_tickCount - startTime) < timeOut) {
 			try {
@@ -697,7 +748,7 @@ class UIA_Browser {
 	
 	; Gets all text from the browser element (Name properties for all Text elements)
 	GetAllText() { 
-		local TextArray, Text, k, v
+		local TextArray := [], Text := "", k := 0, v := 0
 		if !this.IsBrowserVisible()
 			WinActivate this.BrowserId
 			
@@ -784,6 +835,7 @@ class UIA_Browser {
 	
 	; Gets the current URL. fromAddressBar=True gets it straight from the URL bar element, which is not a very good method, because the text might be changed by the user and doesn't start with "http(s)://". Default of fromAddressBar=False will cause the real URL to be fetched, but the browser must be visible for it to work (if is not visible, it will be automatically activated).
 	GetCurrentURL(fromAddressBar:=False) { 
+		local URL := ""
 		if fromAddressBar {
 			URL := this.URLEditElement.Value
 			return URL ? (RegexMatch(URL, "^https?:\/\/") ? URL : "https://" URL) : ""
@@ -797,6 +849,7 @@ class UIA_Browser {
 	
 	; Sets the URL bar to newUrl, optionally also navigates to it if navigateToNewUrl=True
 	SetURL(newUrl, navigateToNewUrl := False) { 
+		local legacyPattern := 0
 		this.URLEditElement.ValuePattern.SetValue(newUrl " ")
 		if !InStr(this.URLEditElement.Value, newUrl) {
 			legacyPattern := this.URLEditElement.LegacyIAccessiblePattern
@@ -829,7 +882,7 @@ class UIA_Browser {
 
 	; Gets all the titles of tabs
 	GetAllTabNames() { 
-		local names := [], k, v
+		local names := [], k := 0, v := 0
 		for k, v in this.GetTabs() {
 			names.Push(v.Name)
 		}
@@ -848,7 +901,7 @@ class UIA_Browser {
 	
 	; Selects a tab with the text of tabName. matchMode follows SetTitleMatchMode scheme: 1=tab name must must start with tabName; 2=can contain anywhere; 3=exact match; RegEx
 	SelectTab(tabName, matchMode:=3, caseSense:=True) { 
-		local selectedTab
+		local selectedTab := 0
 		try {
 			selectedTab := IsObject(tabName) ? tabName : this.GetTab(tabName, matchMode, caseSense)
 			if this.BrowserType = "Vivaldi"
@@ -881,7 +934,7 @@ class UIA_Browser {
 	
 	; Returns True if any of window 4 corners are visible
 	IsBrowserVisible() { 
-		local X, Y, W, H
+		local X := 0, Y := 0, W := 0, H := 0
 		WinGetPos &X, &Y, &W, &H, "ahk_id" this.BrowserId
 		if ((this.BrowserId == this.WindowFromPoint(X, Y)) || (this.BrowserId == this.WindowFromPoint(X, Y+H-1)) || (this.BrowserId == this.WindowFromPoint(X+W-1, Y)) || (this.BrowserId == this.WindowFromPoint(X+W-1, Y+H-1)))
 			return True
@@ -918,7 +971,7 @@ class UIA_Browser {
 	}
 
 	PrintArray(arr) {
-		local ret := "", k, v
+		local ret := "", k := 0, v := 0
 		for k, v in arr
 			ret .= "Key: " k " Value: " (HasMethod(v)? v.name:IsObject(v)?this.PrintArray(v):v) "`n"
 		return ret
@@ -927,7 +980,7 @@ class UIA_Browser {
 	static CompareTitles(compareTitle, winTitle, matchMode:="", caseSense:=True) => UIA_Browser.StrCompare(winTitle, compareTitle, matchMode ? matchMode : A_TitleMatchMode, caseSense)
 
 	static StrCompare(str1, str2, matchMode:=3, caseSense:=True) {
-		local str3, len3
+		local str3 := "", len3 := 0
 		matchMode := UIA.TypeValidation.MatchMode(matchMode)
 		if matchMode != "RegEx" && (len1 := StrLen(str1)) < (len2 := StrLen(str2))
 			str3 := str1, str1 := str2, str2 := str3, len3 := len1, len1 := len2, len2 := len3

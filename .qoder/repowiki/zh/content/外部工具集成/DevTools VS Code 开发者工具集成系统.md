@@ -14,17 +14,21 @@
 - [run_bridge.vbs](file://get-source-panel-line-number/run_bridge.vbs)
 - [AppLauncher.ahk](file://lib/AppLauncher.ahk)
 - [ChromeAppMgr.ahk](file://lib/ChromeAppMgr.ahk)
+- [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
+- [ListQoderWindows.ahk](file://ListQoderWindows.ahk)
+- [hotkey.ahk](file://hotkey.ahk)
 - [README.md](file://README.md)
 - [native-host/README.md](file://devtools-vscode-opener/native-host/README.md)
 </cite>
 
 ## 更新摘要
 **所做更改**
-- 新增IDE工作区发现功能章节，详细说明智能工作区检测机制
-- 增强路径解析算法说明，反映IDE工作区优先级搜索
-- 更新调试日志功能，新增虚拟桌面管理调试支持
-- 完善故障排除指南，增加IDE工作区发现相关问题诊断
-- 优化架构概览图，展示新的工作区发现流程
+- 增强虚拟桌面管理功能，使用 IVirtualDesktopManager 接口实现更精确的窗口检测
+- 新增 IsWindowOnCurrentVirtualDesktop 函数用于判断窗口是否位于当前虚拟桌面
+- 更新工作区检测逻辑，支持 'Qoder IDE' 进程命名约定
+- 优化路径解析算法，优先在已打开的工作区中搜索文件
+- 完善调试日志功能，新增 ide-vdm-debug.log 文件记录虚拟桌面操作详情
+- 改进错误处理和资源管理机制
 
 ## 目录
 1. [简介](#简介)
@@ -33,11 +37,12 @@
 4. [架构概览](#架构概览)
 5. [详细组件分析](#详细组件分析)
 6. [IDE工作区发现功能](#ide工作区发现功能)
-7. [热键命令支持](#热键命令支持)
-8. [依赖关系分析](#依赖关系分析)
-9. [性能考虑](#性能考虑)
-10. [故障排除指南](#故障排除指南)
-11. [结论](#结论)
+7. [虚拟桌面管理增强](#虚拟桌面管理增强)
+8. [热键命令支持](#热键命令支持)
+9. [依赖关系分析](#依赖关系分析)
+10. [性能考虑](#性能考虑)
+11. [故障排除指南](#故障排除指南)
+12. [结论](#结论)
 
 ## 简介
 
@@ -46,7 +51,7 @@ DevTools VS Code 开发者工具集成系统是一个基于 Chrome 扩展和 Aut
 - **智能文件定位**：通过 Chrome DevTools 获取当前选中的源码文件和光标位置
 - **IDE 自动跳转**：一键将当前编辑位置自动打开到 VS Code 或 Qoder
 - **多平台支持**：支持 Windows、macOS 和 Linux 系统
-- **虚拟桌面集成**：智能激活目标 IDE 窗口，支持 Windows 虚拟桌面环境
+- **增强的虚拟桌面集成**：使用 IVirtualDesktopManager 接口实现精确的窗口检测和激活
 - **路径解析优化**：智能解析相对路径，支持多种项目结构
 - **IDE工作区发现**：自动检测已打开的IDE工作区，优先在当前工作区中搜索文件
 - **热键命令支持**：提供键盘快捷键快速访问功能
@@ -54,7 +59,7 @@ DevTools VS Code 开发者工具集成系统是一个基于 Chrome 扩展和 Aut
 
 该系统通过三个主要组件协同工作：Chrome DevTools 扩展、Node.js 原生主机和 AutoHotkey 辅助工具。
 
-**更新** 系统现已实现IDE工作区发现功能，能够智能检测当前桌面上已打开的IDE工作区，并在这些工作区中优先搜索文件，显著提升了文件定位的准确性和速度。同时增强了调试能力，新增了虚拟桌面管理的详细日志记录功能。
+**更新** 系统现已实现增强的虚拟桌面管理功能，通过 IVirtualDesktopManager 接口提供更精确的窗口检测，并支持 'Qoder IDE' 进程命名约定。新增的 IsWindowOnCurrentVirtualDesktop 函数能够准确判断窗口是否位于当前虚拟桌面，显著提升了跨桌面环境下的用户体验。
 
 ## 项目结构
 
@@ -83,6 +88,12 @@ subgraph "应用层"
 D[apps/] --> D1[run_ChatGPT.ps1]
 D --> D2[run_DMS.ps1]
 end
+subgraph "虚拟桌面管理"
+E[OpenControllerFromNetwork.ahk] --> E1[IsWindowOnCurrentVirtualDesktop]
+E --> E2[GetWindowDesktopId]
+F[ListQoderWindows.ahk] --> F1[窗口检测]
+G[hotkey.ahk] --> G1[Qoder IDE支持]
+end
 A5 --> A6[host.js]
 A5 --> A7[install-native-host.ps1]
 A5 --> A8[README.md]
@@ -91,7 +102,8 @@ A5 --> A8[README.md]
 **图表来源**
 - [manifest.json:1-32](file://devtools-vscode-opener/manifest.json#L1-L32)
 - [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
-- [host.js:1-255](file://devtools-vscode-opener/native-host/host.js#L1-L255)
+- [host.js:1-258](file://devtools-vscode-opener/native-host/host.js#L1-L258)
+- [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
 
 **章节来源**
 - [README.md:1-2](file://README.md#L1-L2)
@@ -124,17 +136,19 @@ A5 --> A8[README.md]
 - **IDE工作区发现**：自动检测当前桌面上已打开的IDE工作区，优先在这些工作区中搜索文件
 - **改进的路径解析算法**：支持IDE工作区优先级搜索、相对路径、绝对路径和项目根目录查找
 - **IDE 启动策略**：支持 VS Code、Qoder 等多种 IDE
-- **窗口管理**：智能激活目标 IDE 窗口，支持虚拟桌面
+- **增强的窗口管理**：使用 IVirtualDesktopManager 接口进行精确的窗口激活，支持虚拟桌面
 - **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作
+
+**更新** 原生主机的窗口管理功能已大幅增强，现在使用 IVirtualDesktopManager COM 接口实现更精确的虚拟桌面感知，能够准确判断窗口是否位于当前桌面并进行相应的激活操作。
 
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
 - [devtools.js:1-151](file://devtools-vscode-opener/devtools.js#L1-L151)
-- [host.js:1-255](file://devtools-vscode-opener/native-host/host.js#L1-L255)
+- [host.js:1-258](file://devtools-vscode-opener/native-host/host.js#L1-L258)
 
 ## 架构概览
 
-系统采用分层架构设计，实现了松耦合的组件间通信。经过增强后，新增了IDE工作区发现功能：
+系统采用分层架构设计，实现了松耦合的组件间通信。经过增强后，新增了增强的虚拟桌面管理功能：
 
 ```mermaid
 sequenceDiagram
@@ -142,6 +156,7 @@ participant DevTools as DevTools面板
 participant Background as 背景脚本
 participant NativeHost as 原生主机
 participant PowerShell as PowerShell引擎
+participant VDM as IVirtualDesktopManager
 participant IDE as IDE应用
 DevTools->>Background : INIT连接请求
 Background->>DevTools : PONG响应
@@ -150,7 +165,8 @@ Background->>NativeHost : 发送原生消息
 NativeHost->>NativeHost : findIdeWorkspaces()检测工作区
 NativeHost->>NativeHost : resolveFilePath()优先搜索工作区
 NativeHost->>PowerShell : 直接CLI调用
-PowerShell->>PowerShell : 执行VDM激活逻辑
+PowerShell->>VDM : IsWindowOnCurrentVirtualDesktop()检查窗口
+VDM-->>PowerShell : 返回窗口桌面状态
 PowerShell->>IDE : 启动IDE并定位文件
 IDE-->>PowerShell : 启动确认
 PowerShell-->>NativeHost : 返回执行结果
@@ -162,6 +178,7 @@ Note over NativeHost : 记录调试日志到 ide-vdm-debug.log
 - [background.js:6-38](file://devtools-vscode-opener/background.js#L6-L38)
 - [devtools.js:115-126](file://devtools-vscode-opener/devtools.js#L115-L126)
 - [host.js:13-49](file://devtools-vscode-opener/native-host/host.js#L13-L49)
+- [host.js:157-181](file://devtools-vscode-opener/native-host/host.js#L157-L181)
 
 ### 数据流架构
 
@@ -175,7 +192,7 @@ E --> F[resolveFilePath()优先搜索工作区]
 F --> G[准备原生消息]
 G --> H[发送到原生主机]
 H --> I[直接CLI调用PowerShell]
-I --> J[执行VDM激活和文件定位]
+I --> J[执行VDM检查和文件定位]
 J --> K[生成调试日志]
 K --> L[返回执行结果]
 L --> M[更新UI状态]
@@ -228,7 +245,7 @@ I --> J[返回本地路径]
 
 ### 原生主机组件
 
-**更新** 原生主机实现已增强，新增了IDE工作区发现功能：
+**更新** 原生主机实现已大幅增强，新增了增强的虚拟桌面管理功能：
 
 #### IDE工作区发现功能
 
@@ -257,6 +274,7 @@ H --> I[返回唯一工作区列表]
 - **项目根目录检测**：自动识别 package.json、.git 等项目标识
 - **多盘符支持**：支持 C:/D: 盘符互换
 - **智能候选搜索**：在用户主目录和常见开发目录中搜索
+- **'Qoder IDE' 支持**：专门支持 Qoder IDE 的进程命名约定
 
 ```mermaid
 classDiagram
@@ -277,6 +295,7 @@ class IDELauncher {
 class VirtualDesktopManager {
 +activateIdeWindow(processName, projectDir) string
 +reactivateWindow(hwnd) void
++IsWindowOnCurrentVirtualDesktop(hwnd) bool
 }
 PathResolver --> IDEWorkspaceFinder : "检测IDE工作区"
 PathResolver --> IDELauncher : "提供路径解析"
@@ -286,6 +305,34 @@ IDELauncher --> VirtualDesktopManager : "管理窗口激活"
 **图表来源**
 - [host.js:53-112](file://devtools-vscode-opener/native-host/host.js#L53-L112)
 - [host.js:139-151](file://devtools-vscode-opener/native-host/host.js#L139-L151)
+- [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
+
+#### 增强的虚拟桌面管理
+
+**更新** 系统现在使用 IVirtualDesktopManager COM 接口实现精确的虚拟桌面管理：
+
+- **IVirtualDesktopManager 接口**：通过 COM 接口访问 Windows 虚拟桌面管理器
+- **IsWindowOnCurrentVirtualDesktop 函数**：判断指定窗口是否位于当前虚拟桌面
+- **精确窗口激活**：只在当前桌面的窗口上进行激活操作
+- **错误处理**：优雅处理虚拟桌面功能不可用的情况
+- **调试日志**：记录虚拟桌面操作的详细信息
+
+```mermaid
+flowchart TD
+A[窗口激活请求] --> B[获取目标进程窗口列表]
+B --> C[遍历每个窗口]
+C --> D{检查窗口可见性}
+D --> |不可见| E[跳过该窗口]
+D --> |可见| F[调用IsWindowOnCurrentVirtualDesktop]
+F --> G{窗口是否在当前桌面?}
+G --> |否| H[跳过该窗口]
+G --> |是| I[选择最佳匹配窗口]
+I --> J[激活窗口并定位文件]
+```
+
+**图表来源**
+- [host.js:157-181](file://devtools-vscode-opener/native-host/host.js#L157-L181)
+- [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
 
 #### 直接 CLI 调用实现
 
@@ -298,7 +345,7 @@ IDELauncher --> VirtualDesktopManager : "管理窗口激活"
 - **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作详情
 
 **章节来源**
-- [host.js:1-255](file://devtools-vscode-opener/native-host/host.js#L1-L255)
+- [host.js:1-258](file://devtools-vscode-opener/native-host/host.js#L1-L258)
 
 ### 源码面板桥接组件
 
@@ -435,10 +482,68 @@ F --> |未找到文件| H[返回空字符串]
 - **路径验证**：验证提取的路径存在且为目录
 - **去重处理**：确保返回唯一的工作区列表
 - **错误处理**：优雅处理PowerShell执行异常
+- **'Qoder IDE' 支持**：专门支持 Qoder IDE 的进程命名约定
 
 **章节来源**
 - [host.js:13-49](file://devtools-vscode-opener/native-host/host.js#L13-L49)
 - [host.js:53-112](file://devtools-vscode-opener/native-host/host.js#L53-L112)
+
+## 虚拟桌面管理增强
+
+**新增** 系统现在提供增强的虚拟桌面管理功能，通过 IVirtualDesktopManager 接口实现精确的窗口检测：
+
+### IVirtualDesktopManager 接口实现
+
+系统通过 COM 接口访问 Windows 虚拟桌面管理器：
+
+```mermaid
+flowchart TD
+A[窗口激活请求] --> B[初始化COM对象]
+B --> C{COM初始化成功?}
+C --> |是| D[调用IsWindowOnCurrentVirtualDesktop]
+C --> |否| E[回退到传统方法]
+D --> F{窗口在当前桌面?}
+F --> |是| G[激活窗口]
+F --> |否| H[跳过该窗口]
+E --> I[使用DWM属性检测]
+I --> J[激活可见窗口]
+```
+
+**图表来源**
+- [host.js:157-181](file://devtools-vscode-opener/native-host/host.js#L157-L181)
+- [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
+
+### IsWindowOnCurrentVirtualDesktop 函数
+
+**更新** 新增的函数用于判断窗口是否位于当前虚拟桌面：
+
+- **精确检测**：使用 IVirtualDesktopManager.IsWindowOnCurrentVirtualDesktop 方法
+- **错误处理**：优雅处理 COM 接口不可用的情况
+- **性能优化**：避免不必要的 COM 调用开销
+- **兼容性**：支持不同版本的 Windows 虚拟桌面功能
+
+### Qoder IDE 进程命名支持
+
+**更新** 系统现在专门支持 'Qoder IDE' 进程命名约定：
+
+- **进程名称匹配**：使用 'Qoder IDE' 而不是 'Qoder.exe'
+- **工作区检测**：正确识别 Qoder IDE 的工作区参数
+- **窗口激活**：针对 Qoder IDE 的特殊窗口行为进行优化
+- **兼容性**：支持 Qoder 1.25+ 版本的新进程命名
+
+### 调试日志功能
+
+**更新** 新增详细的调试日志功能：
+
+- **日志文件**：ide-vdm-debug.log 记录虚拟桌面操作详情
+- **操作追踪**：记录每个步骤的执行结果和错误信息
+- **性能监控**：跟踪虚拟桌面操作的性能指标
+- **问题诊断**：提供详细的错误信息和解决方案建议
+
+**章节来源**
+- [host.js:157-181](file://devtools-vscode-opener/native-host/host.js#L157-L181)
+- [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
+- [ListQoderWindows.ahk:1-81](file://ListQoderWindows.ahk#L1-L81)
 
 ## 热键命令支持
 
@@ -492,34 +597,37 @@ B[Node.js Runtime]
 C[Windows API]
 D[PowerShell CLI]
 E[Chrome Extension API]
+F[IVirtualDesktopManager]
 end
 subgraph "核心组件"
-F[DevTools Extension]
-G[Native Host]
-H[CDP Bridge]
-I[AHK Utilities]
+G[DevTools Extension]
+H[Native Host]
+I[CDP Bridge]
+J[AHK Utilities]
 end
 subgraph "IDE集成"
-J[VS Code]
-K[Qoder]
-L[其他IDE]
+K[VS Code]
+L[Qoder]
+M[其他IDE]
 end
-A --> F
-B --> G
-C --> G
-D --> G
-E --> F
-F --> G
-G --> J
-G --> K
-G --> L
-H --> F
-I --> F
+A --> G
+B --> H
+C --> H
+D --> H
+E --> G
+F --> H
+G --> H
+H --> K
+H --> L
+H --> M
+I --> G
+J --> G
 ```
 
 **图表来源**
 - [manifest.json:25-31](file://devtools-vscode-opener/manifest.json#L25-L31)
 - [package.json:2-4](file://get-source-panel-line-number/package.json#L2-L4)
+- [host.js:157-181](file://devtools-vscode-opener/native-host/host.js#L157-L181)
 
 ### 组件耦合度分析
 
@@ -530,6 +638,7 @@ I --> F
 - **路径解析与 IDE 启动**：通过统一的接口抽象实现解耦
 - **热键与扩展**：通过 Chrome commands API 实现独立的功能模块
 - **工作区发现与路径解析**：通过模块化设计实现功能分离
+- **虚拟桌面管理与窗口激活**：通过 IVirtualDesktopManager 接口实现解耦
 
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
@@ -574,8 +683,9 @@ J --> K[最终失败]
 - **权限管理**：通过任务计划程序实现普通权限启动
 - **PowerShell 兼容性**：支持不同版本的 PowerShell 执行策略
 - **工作区发现平台限制**：仅在Windows平台上启用IDE工作区发现功能
+- **虚拟桌面功能降级**：当 IVirtualDesktopManager 不可用时自动回退到传统方法
 
-**更新** 增强后的实现减少了PowerShell复杂性，提升了跨平台稳定性。
+**更新** 增强后的实现减少了PowerShell复杂性，提升了跨平台稳定性，并通过优雅的错误处理机制确保在各种环境下都能正常工作。
 
 ## 故障排除指南
 
@@ -646,7 +756,7 @@ J --> K[最终失败]
 
 5. **工作区检测失败**
    - 检查PowerShell执行权限
-   - 验证IDE进程名称匹配
+   - 验证IDE进程名称匹配（特别是 'Qoder IDE'）
    - 确认工作区路径有效
    - 分析PowerShell命令执行结果
 
@@ -662,29 +772,47 @@ J --> K[最终失败]
    - 确认文件系统访问权限
    - 分析BFS搜索算法效率
 
+#### 虚拟桌面管理问题
+
+**新增** 由于实现了增强的虚拟桌面管理：
+
+8. **IVirtualDesktopManager 不可用**
+   - 检查 Windows 版本是否支持虚拟桌面功能
+   - 验证 COM 接口是否正确注册
+   - 确认有足够的系统权限
+   - 查看调试日志中的 VDM 错误信息
+
+9. **窗口检测不准确**
+   - 检查 IsWindowOnCurrentVirtualDesktop 返回值
+   - 验证窗口句柄有效性
+   - 确认窗口可见性状态
+   - 分析窗口标题匹配逻辑
+
+10. **Qoder IDE 进程识别问题**
+    - 确认进程名称为 'Qoder IDE' 而非 'Qoder.exe'
+    - 检查工作区参数解析是否正确
+    - 验证窗口激活逻辑
+    - 分析调试日志中的进程信息
+
 #### 原生主机简化问题
 
 **更新** 由于实现了更直接的 CLI 调用方式：
 
-8. **CLI 调用超时**
-   - 检查 PowerShell 执行策略
-   - 验证临时目录权限
-   - 确认没有防病毒软件拦截
-   - 查看 10 秒超时限制
+11. **CLI 调用超时**
+    - 检查 PowerShell 执行策略
+    - 验证临时目录权限
+    - 确认没有防病毒软件拦截
+    - 查看 10 秒超时限制
 
-9. **临时文件清理失败**
-   - 检查文件锁定情况
-   - 验证磁盘空间充足
-   - 确认没有权限问题
-
-10. **VDM 激活失败**
-    - 检查 Windows 虚拟桌面功能
-    - 验证 IDE 进程名称匹配
-    - 分析 ide-vdm-debug.log 中的 VDM 错误
+12. **临时文件清理失败**
+    - 检查文件锁定情况
+    - 验证磁盘空间充足
+    - 确认没有权限问题
 
 **章节来源**
 - [install-native-host.ps1:1-58](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L58)
 - [get_line_number.ahk:115-159](file://get-source-panel-line-number/get_line_number.ahk#L115-L159)
+- [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
 
 ### 调试工具和日志
 
@@ -696,12 +824,14 @@ J --> K[最终失败]
 - **PowerShell 日志**：新增的 ide-vdm-debug.log 文件用于 VDM 激活调试
 - **CDP 调试**：桥接服务的健康检查和错误信息
 - **工作区发现日志**：PowerShell命令执行结果和工作区路径解析详情
+- **虚拟桌面日志**：IVirtualDesktopManager 操作记录和错误信息
 
-**更新** 新增了IDE工作区发现和虚拟桌面管理的详细日志功能，便于问题排查。
+**更新** 新增了IDE工作区发现和虚拟桌面管理的详细日志功能，便于问题排查。新的调试日志文件 ide-vdm-debug.log 记录了虚拟桌面操作的详细信息，包括 COM 接口调用结果、窗口检测结果和错误信息。
 
 **章节来源**
 - [devtools.js:125-126](file://devtools-vscode-opener/devtools.js#L125-L126)
 - [host.js:139](file://devtools-vscode-opener/native-host/host.js#L139)
+- [host.js:207-220](file://devtools-vscode-opener/native-host/host.js#L207-L220)
 
 ## 结论
 
@@ -713,11 +843,13 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **跨平台支持**：通过原生主机实现跨平台兼容性
 - **智能路径解析**：高效的路径解析算法支持多种开发场景
 - **IDE工作区发现**：智能检测当前桌面上已打开的IDE工作区，优先在这些工作区中搜索文件
+- **增强的虚拟桌面管理**：使用 IVirtualDesktopManager 接口实现精确的窗口检测和激活
 - **性能优化**：合理的超时控制和资源管理机制
 - **简化实现**：移除复杂 PowerShell 逻辑，提升系统可靠性
 - **热键支持**：完整的键盘快捷键功能
 - **增强调试**：新增虚拟桌面调试日志功能
 - **工作区优先搜索**：显著提升文件定位的准确性和速度
+- **'Qoder IDE' 支持**：专门支持最新的 Qoder IDE 进程命名约定
 
 ### 用户价值
 
@@ -728,6 +860,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **提高系统稳定性**：简化的实现减少了潜在故障点
 - **快捷键访问**：通过热键快速访问核心功能
 - **智能工作区检测**：自动识别已打开的工作区，提升文件搜索准确性
+- **精确的虚拟桌面感知**：确保只在当前桌面的窗口上执行操作
 
 ### 扩展性考虑
 
@@ -740,7 +873,8 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **PowerShell 调试**：新增的日志文件便于问题排查
 - **热键扩展**：可扩展的快捷键系统支持更多功能
 - **工作区发现扩展**：可扩展的工作区检测机制支持更多IDE
+- **虚拟桌面功能扩展**：基于 IVirtualDesktopManager 的架构支持更多虚拟桌面相关功能
 
-**更新** 增强后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的IDE工作区发现功能通过智能检测当前桌面上已打开的IDE工作区，显著提升了文件定位的准确性和速度。新增的调试日志功能进一步优化了用户体验，便于用户理解和故障排除。
+**更新** 增强后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的IDE工作区发现功能通过智能检测当前桌面上已打开的IDE工作区，显著提升了文件定位的准确性和速度。新增的虚拟桌面管理功能通过 IVirtualDesktopManager 接口实现了更精确的窗口检测，特别是在多桌面环境下提供了更好的用户体验。新增的调试日志功能进一步优化了用户体验，便于用户理解和故障排除。
 
-该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。简化的实现不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。新增的IDE工作区发现功能体现了系统对开发者工作流程的深入理解和优化，真正做到了以用户为中心的设计理念。
+该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。简化的实现不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。新增的IDE工作区发现功能和增强的虚拟桌面管理能力体现了系统对开发者工作流程的深入理解和优化，真正做到了以用户为中心的设计理念。

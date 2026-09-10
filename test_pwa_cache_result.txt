@@ -1,0 +1,34 @@
+﻿================ PWA 缓存诊断 ================
+
+【① chrome.exe 窗口扫描（按命令行 --app= 识别 PWA）】
+  [PWA] hwnd=199642 pid=38584
+        标题: DMS - Data Management Service
+        --app=: https://dms.aliyun.com/?accounttraceid=b9f210d31c98452385630e6f721e8cdedacz
+  [PWA] hwnd=657492 pid=38584
+        标题: DMS - Data Management Service
+        --app=: https://dms.aliyun.com/?accounttraceid=b9f210d31c98452385630e6f721e8cdedacz
+  [PWA] hwnd=59122030 pid=38584
+        标题: DMS - Data Management Service
+        --app=: https://dms.aliyun.com/?accounttraceid=b9f210d31c98452385630e6f721e8cdedacz
+  （普通浏览器窗口 2 个，未列出）
+
+【② UIA 取 URL 验证（BuildBrowserCache 实际使用的路径）】
+  hwnd=199642  ✗ UIA 失败: (0x80131509) 
+  hwnd=657492  ✗ UIA 失败: (0x80131509) 
+  hwnd=59122030  ✗ UIA 失败: (0x80131509) 
+
+【③ 缓存命中模拟（与 BuildBrowserCache/ActivateApp 完全同规则）】
+  构建后的缓存条目数: 0
+
+  ChatGPT (chatgpt): - 窗口不存在，按当前代码会【启动新窗口】（正常行为）
+  DMS (dms): ✗ 窗口真实存在(hwnd=199642) 但缓存未命中
+       → 按当前代码，#快捷键 会【新开一个窗口】！
+       原因: UIA 取 URL 全部失败（见②），BuildBrowserCache 建不起缓存
+
+================ 诊断结束 ================
+结论指引：
+· 若①中能看到 DMS 的 [PWA] 条目，但②全部✗ → Chrome 更新破坏了 UIA 取 URL，
+  BuildBrowserCache 失效，需改用进程命令行 --app= 识别（脚本可输出修复方案）
+· 若①中没有 DMS 条目 → DMS 窗口其实不在运行
+· 若③显示命中但实际按键仍新开 → 问题在 ActivateApp 的缓存生命周期（热键按下
+  时缓存是脚本启动时建的，中途打开的窗口不在缓存里）

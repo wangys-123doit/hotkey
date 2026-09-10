@@ -428,6 +428,25 @@ CapsLock::
         }
     }
 }
+
+!s:: SwitchDevToolsPanel("Source")
+
+!n:: SwitchDevToolsPanel("Network")
+
+; 通过 DevTools 命令菜单 (Ctrl+Shift+P) 切换面板
+; 官方文档要点（autohotkey.com/docs/v2/lib/Send.htm）：
+;   1. 热键触发时用户仍按住修饰键，Send 仅临时释放，后续按键可能带上 Alt 造成乱输入，
+;      须先 KeyWait 等修饰键物理松开；
+;   2. SendInput 比 SendEvent 更快、更可靠，且发送期间缓冲用户的物理按键，防止击键交错；
+;   3. {Text} 模式按字符流发送，不依赖键盘布局与修饰键状态，比按键码翻译更稳。
+SwitchDevToolsPanel(keyword) {
+    KeyWait("Alt") ; 等用户松开 Alt（!n/!s 触发键），避免残留修饰键污染后续按键
+    SendInput("^+p")
+    Sleep(200) ; 等待命令菜单弹出（无窗口级可检测状态，给足余量）
+    SendInput("{Text}" keyword)
+    Sleep(50)
+    SendInput("{Enter}")
+}
 #HotIf
 ; ^!+3: 文本光标执行复制，箭头光标发送 Alt+Left（后退）
 #HotIf WinActive("ahk_class CabinetWClass")
@@ -1166,36 +1185,30 @@ DoSuspend() {
 
 #f12::
 {
-    ; 1. 获取微信主窗口
+    ; 1. 轮询 WeChatAppEx.exe 的所有带标题窗口，找到真正包含文章选项卡的窗口，
+    ;    并激活其 UIA 树。新版微信按需生成 UI 树，需逐窗口激活后才能暴露选项卡。
     try {
-        wechatWin := UIA.ElementFromHandle("ahk_exe WeChatAppEx.exe")
-        wechatWin.SetFocus() ; 必须激活窗口，否则右键可能无效
+        tabs := FindWechatArticleWindowUIA()
     } catch {
-        MsgBox "未找到微信窗口"
-        ExitApp
+        MsgBox "未找到文章选项卡。请先在微信中打开至少一篇公众号文章，再按 Win+F12。"
+        return
     }
 
-    ; 2. 获取所有文章选项卡 (TabItem)
-    try {
-        tabs := wechatWin.FindElements({Type: 50019}) ; 50019 = TabItem
-    } catch {
-        MsgBox "未找到选项卡"
-        ExitApp
-    }
-
-    if (tabs.Length == 0) {
-        MsgBox "当前没有打开的文章标签页"
-        ExitApp
-    }
-
-    ; 3. 遍历每个标签页并执行“右键复制”
-    for item in tabs {
-        title := item.Name
-        if (title == "")
+    ; 2. 轮询每个标签页：右键“复制链接”取 URL。
+    ;    微信 4.1+ 选项卡 Name 为空（标题未暴露给 UIA），标题从文章页 <title> 抓取
+    content := ""
+    for idx, item in tabs {
+        ; 调用自定义函数获取 URL（右键菜单 → 复制链接）
+        url := GetUrlByRightClick(item)
+        if (url == "" || InStr(url, "http") != 1)
             continue
 
-        ; 调用自定义函数获取 URL
-        url := GetUrlByRightClick(item)
+        ; 标题：优先抓文章页 <title>，失败回退选项卡 Name（旧版微信选项卡有名字）
+        title := FetchPageTitle(url)
+        if (title == "")
+            title := item.Name
+        if (title == "")
+            title := "文章" idx
 
         ; 拼接 Markdown 格式，并在末尾添加两个换行以确保在 Obsidian 中清晰分隔
         ; 在循环内部修改为：
@@ -1203,11 +1216,150 @@ DoSuspend() {
         content .= "`n[" . title . "](" . url . ")`n"
     }
 
+    if (content == "") {
+        MsgBox "选项卡找到了 " tabs.Length " 个，但均无有效标题/链接。"
+        return
+    }
+
     ; 添加笔记到obsidian
     parentDir := "微信公众号文章" ; 目录名
     noteName := FormatTime(, "yyyy-MM-dd") ; 文件名
     AddNoteToObsidian(parentDir,noteName,content)
 
+}
+
+; ==============================================================================
+; 微信文章选项卡 UIA 定位（适配微信 3.9 / 4.1+，Win 11）
+; 实测验证的 4.1+ 结构（WeChatAppEx.exe 公众号窗口）：
+;   Window(Chrome_WidgetWin_0) → BrowserView → TopContainerView → TabStripRegionView
+;     → TabStrip → FlueTabContainer → N × Pane(ClassName="Tab")
+; 要点：
+;   1. 选项卡 Name 为空（标题未暴露给 UIA），标题需从文章页 <title> 抓取；
+;   2. WeChatAppEx.exe 有几十个窗口（含大量隐藏渲染窗口），需逐个轮询带标题窗口；
+;   3. 微信 4.x 按需生成 UIA 树：激活（WM_GETOBJECT / UIA 附着）后才暴露完整控件；
+;   4. 微信非管理员运行时，同样普通权限的脚本即可读取，无需提权。
+; ==============================================================================
+FindWechatArticleWindowUIA() {
+    ; 微信公众号文章窗口只属于 WeChatAppEx.exe（Chromium），不轮询 Weixin.exe 主程序窗口，
+    ; 避免遍历主程序的聊天窗口浪费时间。
+    for hwnd in WinGetList("ahk_exe WeChatAppEx.exe") {
+        title := ""
+        try title := WinGetTitle(hwnd)
+        if (title == "") ; 跳过无标题的渲染/工具窗口（含托盘图标窗口）
+            continue
+
+        wechatWin := ""
+        ; 优先：激活 Chromium 辅助功能后获取窗口元素（旧版微信文章窗口的标准路径）
+        try {
+            wechatWin := UIA.ElementFromHandle(hwnd)
+        }
+        ; 备选：微信 4.0+ 窗口可能没有 Chrome_RenderWidgetHostHWND 子控件，
+        ;       激活会抛错；直接附着窗口本身，靠 UIA 客户端附着触发按需树构建。
+        if (!IsObject(wechatWin)) {
+            try wechatWin := UIA.ElementFromHandle(hwnd, , 0)
+        }
+        if (!IsObject(wechatWin))
+            continue
+
+        ; 微信 4.x 的树是激活后按需构建的，需给一点构建时间，短重试最多 3 次（总等待 ≤600ms）
+        tabs := []
+        loop 3 {
+            tabs := FindWechatArticleTabs(wechatWin)
+            if (tabs.Length > 0)
+                break
+            Sleep 200
+        }
+        if (tabs.Length > 0) {
+            try wechatWin.SetFocus() ; 必须激活窗口，否则后续右键可能无效
+            return tabs
+        }
+    }
+    throw TargetError("未找到包含文章选项卡的微信窗口", -1)
+}
+
+; 抓取文章页面并解析 <title> 作为文章标题（选项卡 Name 异常时的兜底）
+FetchPageTitle(url) {
+    try {
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(3000, 3000, 5000, 8000)
+        req.Open("GET", url)
+        req.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36")
+        req.Send()
+        if (req.Status != 200)
+            return ""
+        if RegExMatch(req.ResponseText, "isU)<title[^>]*>(.*)</title>", &m) {
+            title := Trim(m[1])
+            title := RegExReplace(title, "s)\s+", " ")
+            return DecodeHtmlEntities(title)
+        }
+    }
+    return ""
+}
+
+DecodeHtmlEntities(s) {
+    s := StrReplace(s, "&lt;", "<")
+    s := StrReplace(s, "&gt;", ">")
+    s := StrReplace(s, "&quot;", '"')
+    s := StrReplace(s, "&apos;", "'")
+    s := StrReplace(s, "&nbsp;", " ")
+    s := StrReplace(s, "&amp;", "&") ; 必须最后替换，避免二次解码
+    return s
+}
+
+; 微信更新后文章标签形态随版本而变，按“新版优先、旧版兜底”逐档搜索：
+;   4.1+：容器 FlueTabContainer 下的 Pane(ClassName="Tab")，无名字，仅靠位置识别；
+;   3.9 等旧版：TabItem / Tab 容器下的 ListItem/Custom。
+FindWechatArticleTabs(wechatWin) {
+    ; ① 微信 4.1+（Chromium 内嵌）：FlueTabContainer → 子元素 ClassName="Tab"
+    try {
+        tabs := []
+        for container in wechatWin.FindElements({ClassName: "FlueTabContainer"})
+            for tab in container.FindElements({ClassName: "Tab"}) {
+                ; 标签过多时会溢出滚动区，屏幕外标签无法右键，只保留可见的（l>0 且有宽高）
+                try {
+                    rect := tab.BoundingRectangle
+                    if (rect.r > rect.l && rect.b > rect.t && rect.l > 0)
+                        tabs.Push(tab)
+                }
+            }
+        if (tabs.Length > 0)
+            return tabs
+    }
+
+    ; ② 旧版微信：TabItem，或 Tab 容器内的 TabItem/ListItem/Custom
+    tabs := []
+    seen := Map()
+
+    AddTabs(wechatWin.FindElements({Type: UIA.Type.TabItem}))
+
+    ; 优先限定在 Tab 容器内，避免把窗口中的其它 Custom/ListItem 当成文章。
+    for tabContainer in wechatWin.FindElements({Type: UIA.Type.Tab}) {
+        AddTabs(tabContainer.FindElements([{Type: UIA.Type.TabItem}, {Type: UIA.Type.ListItem}, {Type: UIA.Type.Custom}]))
+    }
+
+    ; 某些版本连 Tab 容器也会改成 Custom，此时只保留可交互且有名称的候选。
+    if (tabs.Length == 0) {
+        for element in wechatWin.FindElements([{Type: UIA.Type.ListItem}, {Type: UIA.Type.Custom}]) {
+            if (element.Name != "" && (element.IsInvokePatternAvailable || element.IsSelectionItemPatternAvailable))
+                AddTabs([element])
+        }
+    }
+
+    return tabs
+
+    AddTabs(elements) {
+        for element in elements {
+            if (element.Name = "")
+                continue
+            try runtimeId := element.RuntimeId
+            catch
+                continue
+            if !seen.Has(runtimeId) {
+                seen[runtimeId] := true
+                tabs.Push(element)
+            }
+        }
+    }
 }
 
 ; 添加笔记到obsidian
@@ -1334,4 +1486,3 @@ GetUrlByRightClick(uiElement) {
     Critical "Off"
     return "未获取到链接"
 }
-

@@ -261,12 +261,97 @@ DumpMap(hwndCache) {
     _gui.Show()
 }
 
-; 根据 browser_apps.json 配置激活对应 Chrome App 窗口
+; 获取进程命令行（NtQueryInformationProcess，不走 WMI；与 OpenControllerFromNetwork.ahk 同源，
+; 独立命名避免重复定义）
+GetAppProcessCommandLine(pid) {
+    try {
+        hProcess := DllCall("OpenProcess", "UInt", 0x1010, "Int", 0, "UInt", pid, "Ptr")
+        if !hProcess
+            return ""
+        buf := Buffer(32768, 0)
+        ; ProcessCommandLineInformation = 60
+        status := DllCall("ntdll\NtQueryInformationProcess", "Ptr", hProcess, "UInt", 60, "Ptr", buf, "UInt", buf.Size, "UInt*", 0, "UInt")
+        DllCall("CloseHandle", "Ptr", hProcess)
+        if (status = 0) {
+            strLen := NumGet(buf, 0, "UShort")
+            strPtr := NumGet(buf, A_PtrSize == 8 ? 8 : 4, "Ptr")
+            if (strLen > 0 && strPtr)
+                return StrGet(strPtr, strLen // 2, "UTF-16")
+        }
+    }
+    return ""
+}
+
+; 从命令行 --app= 参数提取 URL；非 PWA 窗口返回空串
+ExtractAppUrlFromCmd(cmdLine) {
+    if RegExMatch(cmdLine, '--app="?([^"\s]+)', &m)
+        return m[1]
+    return ""
+}
+
+; 提取 URL 的 host，用于容忍参数差异的同一应用比对（如 ?accounttraceid=...）
+GetUrlHost(url) {
+    if RegExMatch(url, "^https?://([^/]+)", &m)
+        return StrLower(m[1])
+    return ""
+}
+
+; 查找已存在的 PWA 窗口：按进程命令行 --app= 匹配（毫秒级，不受 Chrome 更新、
+; UIA 失败、缓存生命周期影响）。优先返回当前桌面可见窗口（DWMWA_CLOAKED=0），
+; 都不在当前桌面时回退首个匹配窗口。
+FindExistingAppWindow(app) {
+    exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
+    targetHost := GetUrlHost(app["url"])
+    if (targetHost == "")
+        return 0
+
+    fallback := 0
+    cmdCache := Map()  ; 同一进程的多个窗口共享命令行，避免重复读内核
+    for hwnd in WinGetList("ahk_exe " exe) {
+        title := ""
+        try title := WinGetTitle("ahk_id " hwnd)
+        if (title == "")
+            continue
+        pid := 0
+        try pid := WinGetPID("ahk_id " hwnd)
+        if !pid
+            continue
+        if !cmdCache.Has(pid)
+            cmdCache[pid] := ExtractAppUrlFromCmd(GetAppProcessCommandLine(pid))
+        appUrl := cmdCache[pid]
+        if (appUrl == "" || GetUrlHost(appUrl) != targetHost)
+            continue
+
+        ; DWMWA_CLOAKED：非当前桌面的窗口 cloaked=1
+        buf := Buffer(4, 0)
+        hr := DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", hwnd, "UInt", 14, "Ptr", buf, "UInt", 4, "Int")
+        if (hr = 0 && !NumGet(buf, 0, "Int"))
+            return hwnd
+        if !fallback
+            fallback := hwnd
+    }
+    return fallback
+}
+
+; 根据 browser_apps.json 配置激活对应 Chrome App 窗口；只能复用已有窗口，没有才新开
 ActivateApp(app) {
     global hwndCache
     if !IsSet(hwndCache) || !hwndCache
         hwndCache := Map()
 
+    ; ① 首选进程级识别：命令行 --app= 匹配，实时扫描，永远只复用已存在的窗口。
+    ;    （旧方案只靠启动时建一次缓存，脚本启动后打开的窗口不在缓存里，
+    ;      导致 #快捷键总是新开；UIA 取 URL 失败时缓存也建不起来）
+    existing := FindExistingAppWindow(app)
+    if existing {
+        if WinActive("ahk_id " existing)
+            WinMinimize("ahk_id " existing)
+        else
+            WinActivate("ahk_id " existing)
+        return
+    }
+
+    ; ② 兼容旧路径：普通浏览器标签页打开了该 URL（非 PWA 窗口）时，仍可通过缓存激活
     exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
 
     targetURL := app["url"]
@@ -295,7 +380,7 @@ ActivateApp(app) {
         }
         return
     }
-    ; 找不到 → 启动 App 并等待窗口出现，并重建缓存
+    ; ③ 确实没有任何已存在的窗口 → 启动 App 并等待窗口出现，并重建缓存
     Run APP_DIR "\" app["name"] ".lnk"
     winTitle := app["title"]
     if WinWait(winTitle " ahk_exe " exe,, 5) {

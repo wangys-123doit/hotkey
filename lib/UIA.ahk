@@ -842,12 +842,28 @@ static __ConditionBuilder(obj, &nonUIAEncountered?, isParentNotCondition:=0) {
  * @returns {UIA.IUIAutomationElement}
  */
 static ElementFromChromium(winTitle:="", activateChromiumAccessibility:=500, cacheRequest?) {
-    if activateChromiumAccessibility
-        return this.ActivateChromiumAccessibility(winTitle, 1, activateChromiumAccessibility, cacheRequest?)
+    local activatedElement := 0, cHwnd := 0, fallbackHwnd := 0, match := "", fallbackCriteria := ""
+    if activateChromiumAccessibility {
+        try {
+            activatedElement := this.ActivateChromiumAccessibility(winTitle, 1, activateChromiumAccessibility, cacheRequest?)
+            if IsObject(activatedElement)
+                return activatedElement
+        }
+        catch TargetError {
+        }
+    }
     try cHwnd := ControlGetHwnd("Chrome_RenderWidgetHostHWND1", winTitle)
-    if !IsSet(cHwnd) || !cHwnd
-        throw TargetError("Chrome_RenderWidgetHostHWND1 content control was not found", -1)
-    return this.ElementFromHandle(cHwnd, cacheRequest?, False)
+    if IsSet(cHwnd) && cHwnd
+        return this.ElementFromHandle(cHwnd, cacheRequest?, False)
+
+    ; Newer WeChat builds expose a separate Chrome Legacy Window instead of the renderer control.
+    try fallbackHwnd := IsInteger(winTitle) ? winTitle : WinExist(winTitle)
+    if !fallbackHwnd && !IsInteger(winTitle) && RegExMatch(winTitle, "i)ahk_exe\s+\S+", &match)
+        fallbackCriteria := match[0], fallbackHwnd := WinExist(fallbackCriteria)
+    if !IsSet(fallbackHwnd) || !fallbackHwnd
+        return 0
+    try return this.ElementFromHandle(fallbackHwnd, cacheRequest?, False)
+    return 0
 }
 /**
  * Returns whether a window is a Chromium window or not
