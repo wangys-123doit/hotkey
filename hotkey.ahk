@@ -933,7 +933,7 @@ A_Programs: 当前用户开始菜单程序目录
 }
 ^space::
 {
-	ahk_exe := "Qoder IDE.exe"
+	ahk_exe := "Qoder.exe"
     APP_PATH := A_ProgramsCommon "\Qoder\Qoder IDE.lnk"
     hwnd := WinExist("ahk_exe " ahk_exe)
     if hwnd {

@@ -59,7 +59,7 @@ function resolveFilePath(inputPath, ideProcessName) {
   const skip = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.vscode']);
 
   // Priority 1: Search in IDE workspace directories (already-open projects on current desktop)
-  const workspaces = findIdeWorkspaces(ideProcessName || 'Qoder IDE');
+  const workspaces = findIdeWorkspaces(ideProcessName || 'Qoder');
   for (const ws of workspaces) {
     const full = path.join(ws, rel);
     if (fs.existsSync(full)) return path.normalize(full);
@@ -125,8 +125,8 @@ function findProjectRoot(filePath) {
 // ─── Open File (VDM activate + clipboard + Quick Open, single pwsh) ──
 
 function openFile(file, line, col, ide) {
-  // Qoder 1.25+ uses "Qoder IDE.exe" for the GUI process.
-  const processName = ide === 'qoder' ? 'Qoder IDE' : 'code';
+  // Qoder 1.25+ uses "Qoder.exe" for the GUI process.
+  const processName = ide === 'qoder' ? 'Qoder' : 'code';
   const resolved = resolveFilePath(file, processName);
   if (!resolved) throw new Error(`cannot resolve: ${file}`);
 
