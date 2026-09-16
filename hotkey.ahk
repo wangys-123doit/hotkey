@@ -962,6 +962,37 @@ A_Programs: 当前用户开始菜单程序目录
         }
     }
 }
+!space::
+{
+    qoderExeNames := ["Qoder CN IDE.exe"]
+    APP_PATH := A_ProgramsCommon "\Qoder\Qoder CN IDE.lnk"
+    ; Qoder GUI 进程名随版本变化：1.29+ 为 "Qoder IDE.exe"，旧版为 "Qoder.exe"
+    ; （当前 "Qoder.exe" 实为无窗口的后端 shared-client 辅助进程）。
+    ; 依次按候选名查找真正拥有窗口的编辑器实例，保证跨版本稳定。
+    hwnd := 0
+    for exeName in qoderExeNames {
+        hwnd := WinExist("ahk_exe " exeName)
+        if hwnd
+            break
+    }
+    if hwnd {
+        if WinActive("ahk_id " hwnd) {
+            WinMinimize("ahk_id " hwnd)
+        } else {
+            WinShow("ahk_id " hwnd)
+            WinActivate("ahk_id " hwnd)
+        }
+        return
+    }
+
+    LaunchQoderAsStandardUser(APP_PATH)
+    for exeName in qoderExeNames {
+        if WinWait("ahk_exe " exeName, , 6) {
+            WinActivate("ahk_exe " exeName)
+            return
+        }
+    }
+}
 
  ; 微信
  #w::
