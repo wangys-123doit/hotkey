@@ -8,6 +8,7 @@
 - [devtools.html](file://devtools-vscode-opener/devtools.html)
 - [host.js](file://devtools-vscode-opener/native-host/host.js)
 - [install-native-host.ps1](file://devtools-vscode-opener/native-host/install-native-host.ps1)
+- [README.md](file://devtools-vscode-opener/native-host/README.md)
 - [bridge.js](file://get-source-panel-line-number/bridge.js)
 - [get_line_number.ahk](file://get-source-panel-line-number/get_line_number.ahk)
 - [package.json](file://get-source-panel-line-number/package.json)
@@ -18,12 +19,14 @@
 - [ListQoderWindows.ahk](file://ListQoderWindows.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
 - [README.md](file://README.md)
-- [native-host/README.md](file://devtools-vscode-opener/native-host/README.md)
 </cite>
 
 ## 更新摘要
 **所做更改**
-- 增强虚拟桌面管理功能，使用 IVirtualDesktopManager 接口实现更精确的窗口检测
+- 优化了原生主机安装脚本，现在直接引用工作区源码host.js文件而不是复制到安装目录
+- 解决了开发时同步问题，确保修改工作区源码后能立即生效
+- 增加了清理历史遗留副本的逻辑，自动删除旧版本安装的host.js副本
+- 增强了虚拟桌面管理功能，使用 IVirtualDesktopManager 接口实现更精确的窗口检测
 - 新增 IsWindowOnCurrentVirtualDesktop 函数用于判断窗口是否位于当前虚拟桌面
 - 更新工作区检测逻辑，支持 'Qoder IDE' 进程命名约定
 - 优化路径解析算法，优先在已打开的工作区中搜索文件
@@ -59,7 +62,7 @@ DevTools VS Code 开发者工具集成系统是一个基于 Chrome 扩展和 Aut
 
 该系统通过三个主要组件协同工作：Chrome DevTools 扩展、Node.js 原生主机和 AutoHotkey 辅助工具。
 
-**更新** 系统现已实现增强的虚拟桌面管理功能，通过 IVirtualDesktopManager 接口提供更精确的窗口检测，并支持 'Qoder IDE' 进程命名约定。新增的 IsWindowOnCurrentVirtualDesktop 函数能够准确判断窗口是否位于当前虚拟桌面，显著提升了跨桌面环境下的用户体验。
+**更新** 系统现已实现优化的原生主机安装机制，直接引用工作区源码而非复制副本，彻底解决了开发时的同步问题。同时增强了虚拟桌面管理功能，通过 IVirtualDesktopManager 接口提供更精确的窗口检测，并支持 'Qoder IDE' 进程命名约定。新增的 IsWindowOnCurrentVirtualDesktop 函数能够准确判断窗口是否位于当前虚拟桌面，显著提升了跨桌面环境下的用户体验。
 
 ## 项目结构
 
@@ -102,7 +105,7 @@ A5 --> A8[README.md]
 **图表来源**
 - [manifest.json:1-32](file://devtools-vscode-opener/manifest.json#L1-L32)
 - [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
-- [host.js:1-258](file://devtools-vscode-opener/native-host/host.js#L1-L258)
+- [host.js:1-260](file://devtools-vscode-opener/native-host/host.js#L1-L260)
 - [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
 
 **章节来源**
@@ -139,16 +142,16 @@ A5 --> A8[README.md]
 - **增强的窗口管理**：使用 IVirtualDesktopManager 接口进行精确的窗口激活，支持虚拟桌面
 - **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作
 
-**更新** 原生主机的窗口管理功能已大幅增强，现在使用 IVirtualDesktopManager COM 接口实现更精确的虚拟桌面感知，能够准确判断窗口是否位于当前桌面并进行相应的激活操作。
+**更新** 原生主机的安装机制已大幅优化，现在直接引用工作区源码host.js文件而不是复制到安装目录，彻底解决了开发时同步问题。同时增加了清理历史遗留副本的逻辑，自动删除旧版本安装的host.js副本。
 
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
 - [devtools.js:1-151](file://devtools-vscode-opener/devtools.js#L1-L151)
-- [host.js:1-258](file://devtools-vscode-opener/native-host/host.js#L1-L258)
+- [host.js:1-260](file://devtools-vscode-opener/native-host/host.js#L1-L260)
 
 ## 架构概览
 
-系统采用分层架构设计，实现了松耦合的组件间通信。经过增强后，新增了增强的虚拟桌面管理功能：
+系统采用分层架构设计，实现了松耦合的组件间通信。经过增强后，新增了优化的原生主机安装机制和增强的虚拟桌面管理功能：
 
 ```mermaid
 sequenceDiagram
@@ -245,7 +248,23 @@ I --> J[返回本地路径]
 
 ### 原生主机组件
 
-**更新** 原生主机实现已大幅增强，新增了增强的虚拟桌面管理功能：
+**更新** 原生主机实现已大幅增强，新增了优化的安装机制和增强的虚拟桌面管理功能：
+
+#### 优化的安装机制
+
+**更新** 系统现在采用直接引用工作区源码的安装方式，彻底解决了开发同步问题：
+
+```mermaid
+flowchart TD
+A[运行安装脚本] --> B[检查工作区host.js存在性]
+B --> C[清理历史遗留副本]
+C --> D[创建host.cmd指向工作区源码]
+D --> E[注册Chrome Native Host]
+E --> F[完成安装]
+```
+
+**图表来源**
+- [install-native-host.ps1:28-44](file://devtools-vscode-opener/native-host/install-native-host.ps1#L28-L44)
 
 #### IDE工作区发现功能
 
@@ -345,7 +364,8 @@ I --> J[激活窗口并定位文件]
 - **调试日志**：新增 ide-vdm-debug.log 文件记录虚拟桌面操作详情
 
 **章节来源**
-- [host.js:1-258](file://devtools-vscode-opener/native-host/host.js#L1-L258)
+- [host.js:1-260](file://devtools-vscode-opener/native-host/host.js#L1-L260)
+- [install-native-host.ps1:1-70](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L70)
 
 ### 源码面板桥接组件
 
@@ -685,7 +705,7 @@ J --> K[最终失败]
 - **工作区发现平台限制**：仅在Windows平台上启用IDE工作区发现功能
 - **虚拟桌面功能降级**：当 IVirtualDesktopManager 不可用时自动回退到传统方法
 
-**更新** 增强后的实现减少了PowerShell复杂性，提升了跨平台稳定性，并通过优雅的错误处理机制确保在各种环境下都能正常工作。
+**更新** 优化后的安装机制减少了PowerShell复杂性，提升了跨平台稳定性，并通过优雅的错误处理机制确保在各种环境下都能正常工作。直接引用工作区源码的方式确保了开发时的即时同步，无需重新部署。
 
 ## 故障排除指南
 
@@ -794,23 +814,30 @@ J --> K[最终失败]
     - 验证窗口激活逻辑
     - 分析调试日志中的进程信息
 
-#### 原生主机简化问题
+#### 原生主机安装问题
 
-**更新** 由于实现了更直接的 CLI 调用方式：
+**更新** 由于实现了优化的安装机制：
 
-11. **CLI 调用超时**
-    - 检查 PowerShell 执行策略
-    - 验证临时目录权限
-    - 确认没有防病毒软件拦截
-    - 查看 10 秒超时限制
+11. **安装脚本执行失败**
+    - 确认Node.js已正确安装并可访问
+    - 检查工作区host.js文件存在性
+    - 验证管理员权限
+    - 检查注册表写入权限
 
-12. **临时文件清理失败**
-    - 检查文件锁定情况
-    - 验证磁盘空间充足
-    - 确认没有权限问题
+12. **工作区源码同步问题**
+    - 确认安装脚本直接引用工作区源码
+    - 验证host.cmd文件指向正确的host.js路径
+    - 检查是否有权限访问工作区目录
+    - 确认没有防病毒软件阻止访问
+
+13. **历史遗留副本问题**
+    - 检查安装脚本是否正确清理旧副本
+    - 验证安装目录中是否还有旧的host.js文件
+    - 确认新的host.cmd文件指向工作区源码
+    - 重新运行安装脚本以确保完全更新
 
 **章节来源**
-- [install-native-host.ps1:1-58](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L58)
+- [install-native-host.ps1:1-70](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L70)
 - [get_line_number.ahk:115-159](file://get-source-panel-line-number/get_line_number.ahk#L115-L159)
 - [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
 
@@ -826,7 +853,7 @@ J --> K[最终失败]
 - **工作区发现日志**：PowerShell命令执行结果和工作区路径解析详情
 - **虚拟桌面日志**：IVirtualDesktopManager 操作记录和错误信息
 
-**更新** 新增了IDE工作区发现和虚拟桌面管理的详细日志功能，便于问题排查。新的调试日志文件 ide-vdm-debug.log 记录了虚拟桌面操作的详细信息，包括 COM 接口调用结果、窗口检测结果和错误信息。
+**更新** 新增了IDE工作区发现和虚拟桌面管理的详细日志功能，便于问题排查。新的调试日志文件 ide-vdm-debug.log 记录了虚拟桌面操作的详细信息，包括 COM 接口调用结果、窗口检测结果和错误信息。同时，优化的安装机制确保了开发时的即时同步，无需重新部署即可看到代码更改的效果。
 
 **章节来源**
 - [devtools.js:125-126](file://devtools-vscode-opener/devtools.js#L125-L126)
@@ -845,7 +872,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **IDE工作区发现**：智能检测当前桌面上已打开的IDE工作区，优先在这些工作区中搜索文件
 - **增强的虚拟桌面管理**：使用 IVirtualDesktopManager 接口实现精确的窗口检测和激活
 - **性能优化**：合理的超时控制和资源管理机制
-- **简化实现**：移除复杂 PowerShell 逻辑，提升系统可靠性
+- **优化的安装机制**：直接引用工作区源码，解决开发同步问题
 - **热键支持**：完整的键盘快捷键功能
 - **增强调试**：新增虚拟桌面调试日志功能
 - **工作区优先搜索**：显著提升文件定位的准确性和速度
@@ -857,10 +884,11 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **改善开发体验**：智能激活窗口，支持虚拟桌面环境
 - **降低学习成本**：直观的界面和简单的配置流程
 - **增强开发灵活性**：支持多种 IDE 和开发环境
-- **提高系统稳定性**：简化的实现减少了潜在故障点
+- **提高系统稳定性**：优化的安装机制减少了潜在故障点
 - **快捷键访问**：通过热键快速访问核心功能
 - **智能工作区检测**：自动识别已打开的工作区，提升文件搜索准确性
 - **精确的虚拟桌面感知**：确保只在当前桌面的窗口上执行操作
+- **开发时即时同步**：修改工作区源码后立即生效，无需重新部署
 
 ### 扩展性考虑
 
@@ -875,6 +903,6 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **工作区发现扩展**：可扩展的工作区检测机制支持更多IDE
 - **虚拟桌面功能扩展**：基于 IVirtualDesktopManager 的架构支持更多虚拟桌面相关功能
 
-**更新** 增强后的实现显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。新的IDE工作区发现功能通过智能检测当前桌面上已打开的IDE工作区，显著提升了文件定位的准确性和速度。新增的虚拟桌面管理功能通过 IVirtualDesktopManager 接口实现了更精确的窗口检测，特别是在多桌面环境下提供了更好的用户体验。新增的调试日志功能进一步优化了用户体验，便于用户理解和故障排除。
+**更新** 优化后的安装机制显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。直接引用工作区源码的方式彻底解决了开发时的同步问题，使得开发体验更加流畅。新的IDE工作区发现功能通过智能检测当前桌面上已打开的IDE工作区，显著提升了文件定位的准确性和速度。新增的虚拟桌面管理功能通过 IVirtualDesktopManager 接口实现了更精确的窗口检测，特别是在多桌面环境下提供了更好的用户体验。新增的调试日志功能进一步优化了用户体验，便于用户理解和故障排除。
 
-该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。简化的实现不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。新增的IDE工作区发现功能和增强的虚拟桌面管理能力体现了系统对开发者工作流程的深入理解和优化，真正做到了以用户为中心的设计理念。
+该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。优化的安装机制不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。新增的IDE工作区发现功能和增强的虚拟桌面管理能力体现了系统对开发者工作流程的深入理解和优化，真正做到了以用户为中心的设计理念。
