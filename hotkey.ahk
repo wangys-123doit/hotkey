@@ -75,11 +75,11 @@ global g_weixinHwnd := 0
 
 ; 有道词典复制粘贴并查询翻译
 pasteEnter(){
-    ; 加入重试机制 (try...catch + Loop)，防止Chrome_WidgetWin_01还没来得及完全初始化，导致ControlFocus失败
+    ; 加入重试机制 (try...catch + Loop)，防止Chrome_WidgetWin_11还没来得及完全初始化，导致ControlFocus失败
     success := false
     Loop 30 {
         try {
-            targetHwnd := ControlGetHwnd("Chrome_WidgetWin_01", "ahk_class YodaoMainWndClass")
+            targetHwnd := ControlGetHwnd("Chrome_WidgetWin_11", "ahk_class YodaoMainWndClass")
             ControlFocus(targetHwnd)
 
             focusedCtrl := ControlGetFocus("ahk_class YodaoMainWndClass")
@@ -933,9 +933,17 @@ A_Programs: 当前用户开始菜单程序目录
 }
 ^space::
 {
-	ahk_exe := "Qoder.exe"
+    qoderExeNames := ["Qoder IDE.exe", "Qoder.exe"]
     APP_PATH := A_ProgramsCommon "\Qoder\Qoder IDE.lnk"
-    hwnd := WinExist("ahk_exe " ahk_exe)
+    ; Qoder GUI 进程名随版本变化：1.29+ 为 "Qoder IDE.exe"，旧版为 "Qoder.exe"
+    ; （当前 "Qoder.exe" 实为无窗口的后端 shared-client 辅助进程）。
+    ; 依次按候选名查找真正拥有窗口的编辑器实例，保证跨版本稳定。
+    hwnd := 0
+    for exeName in qoderExeNames {
+        hwnd := WinExist("ahk_exe " exeName)
+        if hwnd
+            break
+    }
     if hwnd {
         if WinActive("ahk_id " hwnd) {
             WinMinimize("ahk_id " hwnd)
@@ -947,8 +955,11 @@ A_Programs: 当前用户开始菜单程序目录
     }
 
     LaunchQoderAsStandardUser(APP_PATH)
-    if WinWait("ahk_exe " ahk_exe, , 6) {
-        WinActivate("ahk_exe " ahk_exe)
+    for exeName in qoderExeNames {
+        if WinWait("ahk_exe " exeName, , 6) {
+            WinActivate("ahk_exe " exeName)
+            return
+        }
     }
 }
 

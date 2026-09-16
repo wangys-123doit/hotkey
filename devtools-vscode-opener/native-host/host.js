@@ -10,18 +10,19 @@ const os = require('os');
  * 通过 PowerShell + VDM 获取当前桌面上 IDE 进程的工作区目录。
  * 从进程命令行参数中提取工作区路径，确保文件搜索优先在已打开的项目中进行。
  */
-function findIdeWorkspaces(processName) {
+function findIdeWorkspaces(procNames) {
   if (process.platform !== 'win32') return [];
   try {
+    // 支持单个或多个候选进程名（Qoder GUI 进程名随版本变化）
+    const names = (Array.isArray(procNames) ? procNames : [procNames]).filter(Boolean);
+    if (!names.length) return [];
+    // 单次 WMI 查询取回所有候选进程的命令行，避免逐进程查询（40+ 进程会超过下方 4s 超时）
+    // -Filter 用 PowerShell 单引号包裹、内部单引号双写转义，避免与外层 -Command 双引号冲突
+    const nameFilter = names.map(n => "Name=''" + n + ".exe''").join(' OR ');
     const psLines = [
-      '$procs = Get-Process -Name \'' + processName + '\' -ErrorAction SilentlyContinue',
-      'if (-not $procs) { exit }',
-      'Add-Type -AssemblyName System.Management',
-      'foreach ($p in $procs) {',
-      '  try {',
-      '    $wmi = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" -ErrorAction SilentlyContinue',
-      '    if ($wmi.CommandLine) { Write-Output $wmi.CommandLine }',
-      '  } catch {}',
+      "$w = Get-CimInstance Win32_Process -Filter '" + nameFilter + "' -ErrorAction SilentlyContinue",
+      'foreach ($p in $w) {',
+      '  if ($p.CommandLine) { Write-Output $p.CommandLine }',
       '}'
     ];
     const out = execSync(
@@ -50,7 +51,7 @@ function findIdeWorkspaces(processName) {
 
 // ─── Path Resolution ────────────────────────────────────────────
 
-function resolveFilePath(inputPath, ideProcessName) {
+function resolveFilePath(inputPath, ideProcessNames) {
   const p = String(inputPath || '').replace(/\\/g, '/').trim();
   if (!p) return '';
   if (path.isAbsolute(p) || /^[A-Za-z]:[/\\]/.test(p)) return path.normalize(p);
@@ -59,7 +60,7 @@ function resolveFilePath(inputPath, ideProcessName) {
   const skip = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.vscode']);
 
   // Priority 1: Search in IDE workspace directories (already-open projects on current desktop)
-  const workspaces = findIdeWorkspaces(ideProcessName || 'Qoder');
+  const workspaces = findIdeWorkspaces(ideProcessNames || ['Qoder IDE', 'Qoder']);
   for (const ws of workspaces) {
     const full = path.join(ws, rel);
     if (fs.existsSync(full)) return path.normalize(full);
@@ -125,9 +126,10 @@ function findProjectRoot(filePath) {
 // ─── Open File (VDM activate + clipboard + Quick Open, single pwsh) ──
 
 function openFile(file, line, col, ide) {
-  // Qoder 1.25+ uses "Qoder.exe" for the GUI process.
-  const processName = ide === 'qoder' ? 'Qoder' : 'code';
-  const resolved = resolveFilePath(file, processName);
+  // Qoder GUI 进程名随版本变化：1.29+ 为 "Qoder IDE"，旧版为 "Qoder"。
+  // 两者都纳入候选，跨版本稳定匹配；后端辅助进程 Qoder.exe 无窗口，不会误命中。
+  const procNames = ide === 'qoder' ? ['Qoder IDE', 'Qoder'] : ['code'];
+  const resolved = resolveFilePath(file, procNames);
   if (!resolved) throw new Error(`cannot resolve: ${file}`);
 
   const cwd = findProjectRoot(resolved);
@@ -171,7 +173,7 @@ function openFile(file, line, col, ide) {
     '    try { vdm=(IVirtualDesktopManager)new VirtualDesktopManagerClass(); log.Add("VDM:OK"); }',
     '    catch(Exception e) { log.Add("VDM:FAIL "+e.Message); }',
     '    var pids=new HashSet<uint>();',
-    '    foreach(var p in System.Diagnostics.Process.GetProcessesByName(proc)) pids.Add((uint)p.Id);',
+    '    foreach(var nm in proc.Split(\'|\')) foreach(var p in System.Diagnostics.Process.GetProcessesByName(nm)) pids.Add((uint)p.Id);',
     '    IntPtr best=IntPtr.Zero,fb=IntPtr.Zero;',
     '    EnumWindows((hwnd,_)=>{',
     '      uint pid; GetWindowThreadProcessId(hwnd,out pid);',
@@ -207,7 +209,7 @@ function openFile(file, line, col, ide) {
   const logFile = path.join(os.tmpdir(), 'ide-vdm-debug.log');
   const ps = `Set-Clipboard -Value '${openPath.replace(/'/g, "''")}'
 Add-Type @"\n${cs}\n"@
-[VdmKfo]::Go('${processName}','${projectName}','${logFile.replace(/\\/g, '/')}')`;
+[VdmKfo]::Go('${procNames.join('|')}','${projectName}','${logFile.replace(/\\/g, '/')}')`;
 
   const tmp = path.join(os.tmpdir(), `ide-open-${Date.now()}.ps1`);
   try {

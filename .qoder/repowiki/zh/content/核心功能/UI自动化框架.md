@@ -4,6 +4,7 @@
 **本文档引用的文件**
 - [UIA.ahk](file://lib/UIA.ahk)
 - [UIA_Browser.ahk](file://lib/UIA_Browser.ahk)
+- [ChromeAppMgr.ahk](file://lib/ChromeAppMgr.ahk)
 - [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
 - [README.md](file://README.md)
@@ -11,10 +12,11 @@
 
 ## 更新摘要
 **变更内容**
-- 更新了IDEA集成功能，改进了UI自动化元素检测机制
-- 使用UIA.ElementFromHandle替代简单的键盘快捷键序列
-- 增强了IDE搜索对话框处理的可靠性和稳定性
-- 添加了新的UIA元素等待和定位策略
+- 改进了浏览器UIA自动化，增强了URL提取和元素交互模式
+- 优化了不同浏览器版本的兼容性处理
+- 增强了Chrome应用管理器中的URL获取逻辑
+- 改进了浏览器窗口可见性检测和激活机制
+- 提升了JavaScript执行和返回值处理的可靠性
 
 ## 目录
 1. [简介](#简介)
@@ -38,6 +40,7 @@ UI自动化框架的核心目标是：
 - 提供浏览器自动化扩展
 - 支持屏幕读取器集成
 - **增强IDE集成能力**：通过UIA.ElementFromHandle提供更可靠的IDE窗口元素检测
+- **改进浏览器自动化**：提供更稳定的URL提取和元素交互模式
 
 ## 项目结构
 
@@ -51,6 +54,7 @@ Browser[UIA_Browser.ahk<br/>浏览器扩展]
 end
 subgraph "应用层"
 Hotkey[hotkey.ahk<br/>主脚本]
+ChromeMgr[ChromeAppMgr.ahk<br/>Chrome应用管理]
 NetworkCtrl[OpenControllerFromNetwork.ahk<br/>网络控制器]
 Apps[apps/<br/>示例应用]
 end
@@ -61,6 +65,7 @@ end
 UIA --> Browser
 Hotkey --> UIA
 Hotkey --> Browser
+ChromeMgr --> Browser
 NetworkCtrl --> UIA
 Browser --> UIA
 ```
@@ -68,6 +73,7 @@ Browser --> UIA
 **图表来源**
 - [UIA.ahk](file://lib/UIA.ahk)
 - [UIA_Browser.ahk](file://lib/UIA_Browser.ahk)
+- [ChromeAppMgr.ahk](file://lib/ChromeAppMgr.ahk)
 - [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
 
@@ -133,9 +139,49 @@ IUIAutomationElement --> IUIAutomationCacheRequest
 - [UIA.ahk:1-100](file://lib/UIA.ahk#L1-L100)
 - [UIA.ahk:51-150](file://lib/UIA.ahk#L51-L150)
 
+### 增强的浏览器自动化
+
+**更新** 浏览器自动化模块得到了显著改进，特别是在URL提取和元素交互方面：
+
+#### 改进的URL提取机制
+
+```mermaid
+sequenceDiagram
+participant Script as ChromeAppMgr
+participant Browser as UIA_Browser
+participant DOM as 浏览器DOM
+Script->>Browser : GetCurrentURL(false)
+alt URL获取成功
+Browser-->>Script : 返回真实URL
+else URL获取失败
+Script->>Browser : JSExecute("window.location.href")
+Browser->>DOM : 执行JavaScript
+DOM-->>Browser : 返回location.href
+Browser-->>Script : 返回URL
+end
+Script->>Script : 验证URL格式
+Script-->>Script : 处理特殊URL映射
+```
+
+**图表来源**
+- [ChromeAppMgr.ahk:229-233](file://lib/ChromeAppMgr.ahk#L229-L233)
+
+#### 增强的元素交互模式
+
+**新增** 针对不同浏览器版本的优化：
+
+1. **Chrome/Edge优化**：使用`GetCurrentDocumentElement().Value`获取真实URL
+2. **Firefox优化**：通过地址栏直接获取URL
+3. **可见性检测**：智能检测浏览器窗口状态并自动激活
+4. **JavaScript执行**：改进的JS执行和返回值处理
+
+**章节来源**
+- [ChromeAppMgr.ahk:229-233](file://lib/ChromeAppMgr.ahk#L229-L233)
+- [UIA_Browser.ahk:837-848](file://lib/UIA_Browser.ahk#L837-L848)
+
 ### IDEA集成功能增强
 
-**新增** OpenControllerFromNetwork.ahk中的IDEA集成功能得到了显著增强，采用了更可靠的UIA元素检测机制：
+OpenControllerFromNetwork.ahk中的IDEA集成功能得到显著增强，采用了更可靠的UIA元素检测机制：
 
 #### 改进的IDEA搜索对话框处理流程
 
@@ -184,6 +230,7 @@ UIA_Browser模块专为浏览器自动化而设计，支持Chrome、Firefox、Ed
 - **JavaScript执行**：通过地址栏执行JavaScript
 - **元素定位**：基于CSS选择器的元素定位
 - **文本提取**：从页面提取所有文本内容
+- **改进的URL处理**：增强的URL提取和格式化逻辑
 
 **章节来源**
 - [UIA_Browser.ahk:1-120](file://lib/UIA_Browser.ahk#L1-L120)
@@ -198,6 +245,7 @@ graph TD
 subgraph "应用层"
 AHK[AutoHotkey v2<br/>脚本引擎]
 Scripts[用户脚本<br/>hotkey.ahk]
+ChromeMgr[Chrome应用管理<br/>ChromeAppMgr.ahk]
 NetworkCtrl[网络控制器<br/>OpenControllerFromNetwork.ahk]
 end
 subgraph "UIA框架层"
@@ -211,9 +259,11 @@ COM[COM接口]
 Windows[Windows API]
 end
 AHK --> Scripts
+AHK --> ChromeMgr
 AHK --> NetworkCtrl
 Scripts --> Core
 Scripts --> Browser
+ChromeMgr --> Browser
 NetworkCtrl --> Core
 Core --> UIA_API
 Browser --> Core
@@ -225,6 +275,7 @@ COM --> Windows
 **图表来源**
 - [hotkey.ahk:1-10](file://hotkey.ahk#L1-L10)
 - [UIA.ahk:1-50](file://lib/UIA.ahk#L1-L50)
+- [ChromeAppMgr.ahk:1-50](file://lib/ChromeAppMgr.ahk#L1-L50)
 - [OpenControllerFromNetwork.ahk:1-50](file://OpenControllerFromNetwork.ahk#L1-L50)
 
 ## 详细组件分析
@@ -317,6 +368,43 @@ TryCatch --> |是| WaitInput
 
 **章节来源**
 - [OpenControllerFromNetwork.ahk:42-56](file://OpenControllerFromNetwork.ahk#L42-L56)
+
+### 改进的浏览器URL处理
+
+**新增** 浏览器URL提取和处理的改进：
+
+#### 智能URL获取流程
+
+```mermaid
+flowchart TD
+Start([获取当前URL]) --> CheckVisible{浏览器可见?}
+CheckVisible --> |否且非Firefox| Activate[激活浏览器窗口]
+CheckVisible --> |是| GetDocEl[获取文档元素]
+Activate --> GetDocEl
+GetDocEl --> TryGetValue{尝试获取Value属性}
+TryGetValue --> |成功| ReturnURL[返回真实URL]
+TryGetValue --> |失败| UseJS[使用JavaScript获取]
+UseJS --> ExecuteJS[执行window.location.href]
+ExecuteJS --> ReturnURL
+ReturnURL --> FormatURL[格式化URL]
+FormatURL --> ValidateURL[验证URL格式]
+ValidateURL --> End([返回URL])
+```
+
+**图表来源**
+- [ChromeAppMgr.ahk:229-233](file://lib/ChromeAppMgr.ahk#L229-L233)
+- [UIA_Browser.ahk:837-848](file://lib/UIA_Browser.ahk#L837-L848)
+
+#### 浏览器兼容性处理
+
+1. **Chrome/Edge**：优先使用`GetCurrentDocumentElement().Value`
+2. **Firefox**：通过地址栏获取URL
+3. **PWA应用**：支持命令行参数提取URL
+4. **错误回退**：当UIA失败时自动回退到JavaScript方法
+
+**章节来源**
+- [ChromeAppMgr.ahk:229-233](file://lib/ChromeAppMgr.ahk#L229-L233)
+- [UIA_Browser.ahk:837-848](file://lib/UIA_Browser.ahk#L837-L848)
 
 ### 事件处理机制
 
@@ -413,6 +501,7 @@ Level3 --> Type3
 3. **延迟加载**：按需加载元素属性
 4. **内存管理**：自动释放不再使用的资源
 5. **IDE专用优化**：针对IDE应用的特殊缓存策略
+6. **浏览器优化**：改进的URL提取和元素交互性能
 
 **章节来源**
 - [UIA.ahk:1145-1183](file://lib/UIA.ahk#L1145-L1183)
@@ -481,6 +570,7 @@ Browser_Extension --> UIA_Framework
 Utils --> UIA_Framework
 NetworkCtrl[网络控制器] --> UIA_Framework
 IDE_Integration[IDE集成] --> UIA_Framework
+ChromeMgr[Chrome应用管理] --> Browser_Extension
 subgraph "浏览器扩展内部结构"
 Chrome[Chrome支持]
 Firefox[Firefox支持]
@@ -495,6 +585,7 @@ Browser_Extension --> Common
 
 **图表来源**
 - [UIA_Browser.ahk:458-488](file://lib/UIA_Browser.ahk#L458-L488)
+- [ChromeAppMgr.ahk:220-250](file://lib/ChromeAppMgr.ahk#L220-L250)
 - [OpenControllerFromNetwork.ahk:45-50](file://OpenControllerFromNetwork.ahk#L45-L50)
 
 **章节来源**
@@ -511,6 +602,7 @@ Browser_Extension --> Common
 2. **缓存策略**：根据使用频率智能缓存元素属性
 3. **批量操作**：支持批量元素查找和操作减少API调用次数
 4. **IDE专用优化**：针对IDE应用的快速路径查找
+5. **浏览器优化**：改进的URL提取和元素交互性能
 
 #### 内存管理
 
@@ -555,6 +647,18 @@ ideaEl := UIA.ElementFromHandle("ahk_exe idea64.exe")
 inputEl := ideaEl.WaitElement({Type:"Edit"}, 2000)
 ```
 
+#### 浏览器URL获取失败
+
+**新增** 浏览器URL获取的常见问题：
+
+**问题描述**：无法获取当前浏览器的URL
+
+**解决方案**：
+1. 确保浏览器窗口可见或已激活
+2. 检查UIA辅助功能是否正确启用
+3. 使用JavaScript作为回退方案
+4. 验证浏览器类型和版本兼容性
+
 #### IDEA集成问题
 
 **新增** IDEA集成功能的常见问题：
@@ -580,6 +684,7 @@ inputEl := ideaEl.WaitElement({Type:"Edit"}, 2000)
 - [UIA.ahk:2759-2804](file://lib/UIA.ahk#L2759-L2804)
 - [UIA.ahk:1297-1333](file://lib/UIA.ahk#L1297-L1333)
 - [OpenControllerFromNetwork.ahk:45-50](file://OpenControllerFromNetwork.ahk#L45-L50)
+- [ChromeAppMgr.ahk:229-233](file://lib/ChromeAppMgr.ahk#L229-L233)
 
 ### 错误处理最佳实践
 
@@ -625,6 +730,7 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 4. **屏幕读取器集成**：确保了无障碍访问的兼容性
 5. **灵活的事件处理**：支持多种类型的UIA事件监听
 6. **增强的IDE集成**：通过UIA.ElementFromHandle提供更可靠的IDE应用支持
+7. **改进的浏览器自动化**：提供更稳定的URL提取和元素交互模式
 
 ### 技术特色
 
@@ -633,6 +739,7 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 - **易于使用**：提供了简洁的API接口和丰富的示例代码
 - **稳定可靠**：完善的错误处理和资源管理机制
 - **IDE专用优化**：针对IDE应用的特殊优化和容错机制
+- **浏览器兼容性**：支持多种浏览器版本和类型的自动化
 
 ### 应用场景
 
@@ -643,13 +750,16 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 - 界面元素监控和数据分析
 - 跨平台应用程序控制
 - **IDE开发工作流集成**：与IDEA等开发工具的无缝集成
+- **浏览器自动化**：Web应用测试和自动化操作
 
 ### 最新改进
 
-**新增** 通过OpenControllerFromNetwork.ahk中的IDEA集成功能增强，框架现在能够：
-- 使用UIA.ElementFromHandle进行更可靠的IDE窗口检测
-- 通过WaitElement方法智能等待IDE对话框元素
-- 提供更好的异常处理和容错机制
-- 显著提升IDE搜索对话框处理的稳定性和可靠性
+**新增** 通过改进的浏览器自动化功能，框架现在能够：
+- 提供更稳定的URL提取机制，支持多种浏览器类型
+- 使用JavaScript作为URL获取的回退方案
+- 改进浏览器窗口可见性检测和激活逻辑
+- 增强不同浏览器版本的兼容性处理
+- 优化Chrome应用管理器的URL匹配和窗口激活
+- 提供更好的错误处理和异常恢复机制
 
-通过合理使用这个框架，开发者可以高效地实现各种UI自动化需求，同时保持代码的可维护性和性能表现。特别是在IDE集成方面，新的UIA元素检测机制为开发工作流自动化提供了更强的支持。
+通过合理使用这个框架，开发者可以高效地实现各种UI自动化需求，同时保持代码的可维护性和性能表现。特别是在IDE集成和浏览器自动化方面，新的改进为开发工作流和Web应用测试提供了更强的支持。

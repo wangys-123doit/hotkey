@@ -25,10 +25,22 @@ $hostName = 'com.tduck.vscode_opener'
 $installDir = Join-Path $env:LOCALAPPDATA 'TDuckVSCodeNativeHost'
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-Copy-Item -Path (Join-Path $PSScriptRoot 'host.js') -Destination (Join-Path $installDir 'host.js') -Force
+# 直接运行工作区源码 host.js，不再复制副本
+# （根治“改了工作区源码但扩展仍执行安装目录旧副本”的问题）
+$sourceHostJs = Join-Path $PSScriptRoot 'host.js'
+if (-not (Test-Path $sourceHostJs)) {
+  throw "工作区 host.js 不存在: $sourceHostJs"
+}
+
+# 清理历史遗留的安装副本（旧版本会复制 host.js 到安装目录，现改为直指工作区源码）
+$legacyCopy = Join-Path $installDir 'host.js'
+if (Test-Path $legacyCopy) {
+  Remove-Item -LiteralPath $legacyCopy -Force
+  Write-Host "已删除旧安装副本: $legacyCopy" -ForegroundColor Yellow
+}
 
 $hostCmdPath = Join-Path $installDir 'host.cmd'
-$cmdContent = "@echo off`r`n`"$NodeExe`" `"%~dp0host.js`"`r`n"
+$cmdContent = "@echo off`r`n`"$NodeExe`" `"$sourceHostJs`"`r`n"
 Set-Content -Path $hostCmdPath -Value $cmdContent -Encoding ASCII
 
 $manifestPath = Join-Path $installDir "$hostName.json"

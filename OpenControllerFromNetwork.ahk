@@ -1513,7 +1513,7 @@ OpenInEditor(file, lineNum?, colNum?)
 
     ; 2. 如果当前桌面没有找到，回退：检测任何桌面是否有编辑器
     if editorPath = "" {
-        qoderHwnd := WinExist("ahk_exe Qoder.exe")
+        qoderHwnd := WinExist("ahk_exe Qoder IDE.exe")
         if !qoderHwnd
             qoderHwnd := WinExist("ahk_exe Qoder.exe")
         if qoderHwnd {
@@ -1533,7 +1533,7 @@ OpenInEditor(file, lineNum?, colNum?)
         return
     }
 
-    ; Qoder.exe 是 GUI 进程，跳转参数必须交给 bin\qoder.cmd
+    ; Qoder GUI 进程（1.29+ 为 Qoder IDE.exe，旧版 Qoder.exe）不直接处理 --goto，跳转参数交给 bin\qoder.cmd
     editorCliPath := GetEditorCliPath(editorPath)
 
     ; 3. 拼接命令行参数: --reuse-window --goto file:line:column
@@ -1557,7 +1557,7 @@ OpenInEditor(file, lineNum?, colNum?)
 GetEditorCliPath(editorPath)
 {
     SplitPath(editorPath, &editorName, &editorDir)
-    if (StrLower(editorName) = "Qoder.exe") {
+    if (StrLower(editorName) = "qoder ide.exe" || StrLower(editorName) = "qoder.exe") {
         qoderCliPath := editorDir "\bin\qoder.cmd"
         if FileExist(qoderCliPath)
             return qoderCliPath
@@ -1569,7 +1569,7 @@ GetEditorCliPath(editorPath)
 ; 获取当前虚拟桌面上 Qoder 或 VS Code 的窗口句柄
 ; 使用 DWMWA_CLOAKED 检测当前桌面窗口
 GetEditorHwndOnCurrentDesktop() {
-    for exeName in ["Qoder.exe", "Qoder.exe", "Code.exe"] {
+    for exeName in ["Qoder IDE.exe", "Qoder.exe", "Code.exe"] {
         winList := WinGetList("ahk_exe " exeName)
         for hwnd in winList {
             ; 过滤无标题窗口
