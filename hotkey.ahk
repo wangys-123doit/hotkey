@@ -931,7 +931,7 @@ A_Programs: 当前用户开始菜单程序目录
 
     ToggleWindow(ahk_exe, APP_PATH)
 }
-^space::
+!space::
 {
     qoderExeNames := ["Qoder IDE.exe", "Qoder.exe"]
     APP_PATH := A_ProgramsCommon "\Qoder\Qoder IDE.lnk"
@@ -962,7 +962,7 @@ A_Programs: 当前用户开始菜单程序目录
         }
     }
 }
-!space::
+^space::
 {
     qoderExeNames := ["Qoder CN IDE.exe"]
     APP_PATH := A_ProgramsCommon "\Qoder\Qoder CN IDE.lnk"

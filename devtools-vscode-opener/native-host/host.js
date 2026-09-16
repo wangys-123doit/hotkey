@@ -60,7 +60,7 @@ function resolveFilePath(inputPath, ideProcessNames) {
   const skip = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.vscode']);
 
   // Priority 1: Search in IDE workspace directories (already-open projects on current desktop)
-  const workspaces = findIdeWorkspaces(ideProcessNames || ['Qoder IDE', 'Qoder']);
+  const workspaces = findIdeWorkspaces(ideProcessNames || ['Qoder CN IDE', 'Qoder IDE', 'Qoder']);
   for (const ws of workspaces) {
     const full = path.join(ws, rel);
     if (fs.existsSync(full)) return path.normalize(full);
@@ -128,7 +128,7 @@ function findProjectRoot(filePath) {
 function openFile(file, line, col, ide) {
   // Qoder GUI 进程名随版本变化：1.29+ 为 "Qoder IDE"，旧版为 "Qoder"。
   // 两者都纳入候选，跨版本稳定匹配；后端辅助进程 Qoder.exe 无窗口，不会误命中。
-  const procNames = ide === 'qoder' ? ['Qoder IDE', 'Qoder'] : ['code'];
+  const procNames = ide === 'qoder' ? ['Qoder CN IDE', 'Qoder IDE', 'Qoder'] : ['code'];
   const resolved = resolveFilePath(file, procNames);
   if (!resolved) throw new Error(`cannot resolve: ${file}`);
 

@@ -205,20 +205,22 @@ GetProcessCommandLine(pid) {
         return ""
 }
 
-; 判断进程是否为 PWA（命令行包含 --app=）
+; 判断进程是否为 PWA（命令行包含 --app= 或 --app-id=）
+; 注意：已安装的 PWA 通过快捷方式启动时会复用主浏览器进程，此处检测不到，
+;       需配合 GetChromeHwndOnCurrentDesktop 里的窗口标题判据一起使用
 IsPwaProcess(pid) {
     global g_pwaPids, g_pwaPidsTick
-    if g_pwaPids.Has(pid)
-        return g_pwaPids[pid]
-
-    ; 检查缓存是否过期（60秒 TTL）
+    ; 检查缓存是否过期（60秒 TTL），过期先清空再查询，避免返回陈旧结果
     if (A_TickCount - g_pwaPidsTick > 60000) {
         g_pwaPids := Map()
         g_pwaPidsTick := A_TickCount
     }
 
+    if g_pwaPids.Has(pid)
+        return g_pwaPids[pid]
+
     cmdLine := GetProcessCommandLine(pid)
-    isPwa := InStr(cmdLine, "--app=") > 0
+    isPwa := InStr(cmdLine, "--app=") > 0 || InStr(cmdLine, "--app-id=") > 0
     g_pwaPids[pid] := isPwa
     return isPwa
 }
@@ -247,10 +249,15 @@ GetChromeHwndOnCurrentDesktop() {
         if !title
             continue
 
-        ; 排除 PWA 窗口（通过 NtQueryInformationProcess 检查 --app=）
+        ; 排除 PWA / app 模式窗口（两条判据任一命中即过滤）
+        ; 1) 进程命令行含 --app= / --app-id=（命令行独立进程启动的 app 模式）
+        ; 2) 标题缺少浏览器窗口后缀 " - Google Chrome"（已安装 PWA 复用主进程时，
+        ;    命令行检测不到，但 app 窗口标题只有应用名、无该后缀）
         pid := 0
         try pid := WinGetPID("ahk_id " hwnd)
         if IsPwaProcess(pid)
+            continue
+        if !InStr(title, " - Google Chrome") && !InStr(title, " - Chrome")
             continue
 
         ; DWMWA_CLOAKED: 非当前桌面的窗口 cloaked=1
@@ -1513,7 +1520,9 @@ OpenInEditor(file, lineNum?, colNum?)
 
     ; 2. 如果当前桌面没有找到，回退：检测任何桌面是否有编辑器
     if editorPath = "" {
-        qoderHwnd := WinExist("ahk_exe Qoder IDE.exe")
+        qoderHwnd := WinExist("ahk_exe Qoder CN IDE.exe")
+        if !qoderHwnd
+            qoderHwnd := WinExist("ahk_exe Qoder IDE.exe")
         if !qoderHwnd
             qoderHwnd := WinExist("ahk_exe Qoder.exe")
         if qoderHwnd {
@@ -1557,7 +1566,7 @@ OpenInEditor(file, lineNum?, colNum?)
 GetEditorCliPath(editorPath)
 {
     SplitPath(editorPath, &editorName, &editorDir)
-    if (StrLower(editorName) = "qoder ide.exe" || StrLower(editorName) = "qoder.exe") {
+    if (StrLower(editorName) = "qoder cn ide.exe" || StrLower(editorName) = "qoder ide.exe" || StrLower(editorName) = "qoder.exe") {
         qoderCliPath := editorDir "\bin\qoder.cmd"
         if FileExist(qoderCliPath)
             return qoderCliPath
@@ -1569,7 +1578,7 @@ GetEditorCliPath(editorPath)
 ; 获取当前虚拟桌面上 Qoder 或 VS Code 的窗口句柄
 ; 使用 DWMWA_CLOAKED 检测当前桌面窗口
 GetEditorHwndOnCurrentDesktop() {
-    for exeName in ["Qoder IDE.exe", "Qoder.exe", "Code.exe"] {
+    for exeName in ["Qoder CN IDE.exe","Qoder IDE.exe", "Qoder.exe", "Code.exe"] {
         winList := WinGetList("ahk_exe " exeName)
         for hwnd in winList {
             ; 过滤无标题窗口
