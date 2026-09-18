@@ -380,6 +380,8 @@ ScriptLifecycle.Init()
 {
     ; BuildBrowserCache 已通过 ScriptLifecycle.RegisterReload 注册，Reload 时自动调用
     ScriptLifecycle.Reload()
+    ToolTip("脚本重载中...")
+    SetTimer(() => ToolTip(), 1000)
 }
 
 GroupAdd "ShellGroup", "ahk_exe mintty.exe"

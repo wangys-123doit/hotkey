@@ -207,42 +207,32 @@ CreateWithTrayTip(ps, file, encode) {
 ; ==========================
 ; 浏览器缓存与 App 激活
 ; ==========================
-; 重建浏览器窗口缓存（URL/App 标识 → hwnd）
+; 根据 App 配置 URL 推导缓存键名（与 ActivateApp 的映射规则统一）
+GetAppCacheKey(url) {
+    if (InStr(url, "https://chatgpt.com"))
+        return "chatgpt"
+    else if (InStr(url, "https://dms.aliyun.com"))
+        return "dms"
+    return ""
+}
+
+; 重建浏览器窗口缓存（App 标识 → hwnd）
+; 完全基于进程命令行构建，彻底不碰 UIA：直接复用 FindExistingAppWindow
+; （内部用 GetAppProcessCommandLine 读 --app=/--app-id= + host 匹配 + 窗口标题判据），
+; 既避免 UIA 的 JSExecute 往地址栏写 javascript: 的副作用，也不受 Chrome 更新/UIA 失效影响。
 BuildBrowserCache() {
-    global hwndCache
+    global hwndCache, CONFIG
     if !IsSet(hwndCache) || !hwndCache
         hwndCache := Map()
     hwndCache.Clear()
 
-    ids := WinGetList("ahk_exe chrome.exe")
-
-    for hwnd in ids {
-        ; 1. 过滤掉没有标题的隐藏窗口（Chrome 后台进程）
-        title := WinGetTitle("ahk_id " hwnd)
-        if (title == "")
+    for app in CONFIG["apps"] {
+        key := GetAppCacheKey(app["url"])
+        if (key == "")
             continue
-
-        ; 2. 识别是否为 App 窗口
-        try {
-            cUIA := UIA_Browser("ahk_id " hwnd)
-
-            ; 只用 UIA 属性【只读】取 URL，绝不回退到 JSExecute：
-            ; JSExecute 会把 "javascript:..." 写进地址栏并发送 Ctrl+L+Enter，
-            ; 若在热键（修饰键仍按住）时触发，会把地址栏内容注入当前页面。
-            url := cUIA.GetCurrentURL(false)
-
-            url := Trim(url, " `"")
-            if (InStr(url, "https://chatgpt.com")) {
-                hwndCache["chatgpt"] := hwnd
-            } else if (InStr(url, "https://dms.aliyun.com")) {
-                hwndCache["dms"] := hwnd
-            }
-            ; 不再 else WinActivate(hwnd)：构建缓存不应抢占/激活任何浏览器窗口
-
-            cUIA := ""
-        } catch {
-            continue
-        }
+        hwnd := FindExistingAppWindow(app)
+        if hwnd
+            hwndCache[key] := hwnd
     }
 }
 
@@ -362,15 +352,11 @@ ActivateApp(app) {
         return
     }
 
-    ; ② 兼容旧路径：普通浏览器标签页打开了该 URL（非 PWA 窗口）时，仍可通过缓存激活
+    ; ② 兜底路径：缓存里已有该 App 的窗口句柄时直接激活
+    ;    （缓存现由 BuildBrowserCache 基于进程命令行构建，只收录真正的 PWA 窗口）
     exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
 
-    targetURL := app["url"]
-    if (InStr(targetURL, "https://chatgpt.com")) {
-        targetURL := "chatgpt"
-    } else if (InStr(targetURL, "https://dms.aliyun.com")) {
-        targetURL := "dms"
-    }
+    targetURL := GetAppCacheKey(app["url"])
 
     ; 精准匹配 URL
     if hwndCache.Has(targetURL) {
