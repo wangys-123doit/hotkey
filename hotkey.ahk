@@ -368,7 +368,11 @@ class ScriptLifecycle
     }
 }
 ; hwndCache 已迁移至 ChromeAppMgr.ahk
-ScriptLifecycle.RegisterReload(BuildBrowserCache)
+; 不再在 Reload 时重建浏览器缓存：BuildBrowserCache 依赖 UIA_Browser，其 JSExecute
+; 保底会把 "javascript:..." 写入地址栏并发送 Ctrl+L+Enter；在 Ctrl+Alt+R 重载
+; （修饰键仍按住、Chrome 在前台）时，这串地址栏内容会被注入/覆盖到当前页面。
+; 且 ActivateApp 现以进程级 FindExistingAppWindow 为首选路径，无需该缓存。
+; ScriptLifecycle.RegisterReload(BuildBrowserCache)
 
 ScriptLifecycle.Init()
 

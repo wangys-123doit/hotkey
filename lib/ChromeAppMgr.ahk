@@ -226,20 +226,18 @@ BuildBrowserCache() {
         try {
             cUIA := UIA_Browser("ahk_id " hwnd)
 
-            ; 优先尝试 UIA 属性获取，若失败则用 JS 保底
+            ; 只用 UIA 属性【只读】取 URL，绝不回退到 JSExecute：
+            ; JSExecute 会把 "javascript:..." 写进地址栏并发送 Ctrl+L+Enter，
+            ; 若在热键（修饰键仍按住）时触发，会把地址栏内容注入当前页面。
             url := cUIA.GetCurrentURL(false)
-            if (url == "" || url == "https://") {
-                url := cUIA.JSExecute("window.location.href")
-            }
 
             url := Trim(url, " `"")
             if (InStr(url, "https://chatgpt.com")) {
                 hwndCache["chatgpt"] := hwnd
             } else if (InStr(url, "https://dms.aliyun.com")) {
                 hwndCache["dms"] := hwnd
-            } else {
-                WinActivate(hwnd)
             }
+            ; 不再 else WinActivate(hwnd)：构建缓存不应抢占/激活任何浏览器窗口
 
             cUIA := ""
         } catch {
@@ -296,6 +294,16 @@ GetUrlHost(url) {
     return ""
 }
 
+; 判断是否为"普通浏览器窗口"标题（带浏览器产品名后缀）。
+; 关键：--app 启动的 Chrome 是该 profile 的共享主进程，用户在同一 profile 里
+; 打开的普通窗口也归属这个 pid（命令行仍带 --app=），仅靠进程命令行会把普通
+; 窗口误当成 PWA。真正的 App/PWA 窗口标题不带这些后缀（如 "DMS - Data
+; Management Service"），据此过滤掉普通浏览器窗口。
+IsRegularBrowserWindowTitle(title) {
+    return InStr(title, " - Google Chrome") || InStr(title, " - Chrome")
+        || InStr(title, " - Microsoft Edge") || InStr(title, " - Edge")
+}
+
 ; 查找已存在的 PWA 窗口：按进程命令行 --app= 匹配（毫秒级，不受 Chrome 更新、
 ; UIA 失败、缓存生命周期影响）。优先返回当前桌面可见窗口（DWMWA_CLOAKED=0），
 ; 都不在当前桌面时回退首个匹配窗口。
@@ -311,6 +319,9 @@ FindExistingAppWindow(app) {
         title := ""
         try title := WinGetTitle("ahk_id " hwnd)
         if (title == "")
+            continue
+        ; 排除普通浏览器窗口（共享主进程里的普通标签窗口，标题带产品名后缀）
+        if IsRegularBrowserWindowTitle(title)
             continue
         pid := 0
         try pid := WinGetPID("ahk_id " hwnd)
