@@ -298,7 +298,7 @@ LWin & z::
 #^t::
 {
 	ahk_exe := "Telegram.exe"
-	APP_PATH := D_Programs " (x86)\Telegram Desktop\Telegram.exe"
+	APP_PATH := A_Programs "\Telegram Desktop\Telegram.lnk"
     ToggleWindow(ahk_exe, APP_PATH)
 }
 ; win+f打开edge
@@ -943,20 +943,57 @@ A_Programs: 当前用户开始菜单程序目录
     APP_PATH := A_ProgramsCommon "\Qoder\Qoder IDE.lnk"
     ; Qoder GUI 进程名随版本变化：1.29+ 为 "Qoder IDE.exe"，旧版为 "Qoder.exe"
     ; （当前 "Qoder.exe" 实为无窗口的后端 shared-client 辅助进程）。
-    ; 依次按候选名查找真正拥有窗口的编辑器实例，保证跨版本稳定。
-    hwnd := 0
+    ; 收集所有候选进程名下真正拥有窗口的编辑器实例，保证跨版本稳定。
+    ; 按 PID 升序排序得到稳定顺序：WinGetList 返回的是 z-order，激活后窗口会
+    ; 置顶导致顺序变化，若直接按 z-order 轮询只会在最近两个窗口间来回，无法
+    ; 遍历全部实例；PID 不随激活改变，可实现真正的多实例轮询激活。
+    windows := []
     for exeName in qoderExeNames {
-        hwnd := WinExist("ahk_exe " exeName)
-        if hwnd
-            break
-    }
-    if hwnd {
-        if WinActive("ahk_id " hwnd) {
-            WinMinimize("ahk_id " hwnd)
-        } else {
-            WinShow("ahk_id " hwnd)
-            WinActivate("ahk_id " hwnd)
+        for hwnd in WinGetList("ahk_exe " exeName) {
+            pid := 0
+            try pid := WinGetPID("ahk_id " hwnd)
+            windows.Push({hwnd: hwnd, pid: pid})
         }
+    }
+
+    if windows.Length {
+        ; 按 PID 升序做插入排序（窗口数量极少，不依赖 Sort API，跨 AHK v2 版本稳定）
+        Loop windows.Length - 1 {
+            j := A_Index
+            while (j > 0 && windows[j].pid > windows[j + 1].pid) {
+                tmp := windows[j]
+                windows[j] := windows[j + 1]
+                windows[j + 1] := tmp
+                j--
+            }
+        }
+        n := windows.Length
+        ; 单实例：保持原有“激活 / 最小化”切换
+        if (n = 1) {
+            hwnd := windows[1].hwnd
+            if WinActive("ahk_id " hwnd) {
+                WinMinimize("ahk_id " hwnd)
+            } else {
+                WinShow("ahk_id " hwnd)
+                WinActivate("ahk_id " hwnd)
+            }
+            return
+        }
+
+        ; 多实例：定位当前活动窗口，激活其在排序列表中的下一个（末尾回到开头）
+        activeHwnd := WinActive("A")
+        idx := 0
+        for i, w in windows {
+            if (w.hwnd = activeHwnd) {
+                idx := i
+                break
+            }
+        }
+        ; 当前焦点不在任一实例上时从第一个开始，否则向后轮询
+        nextIndex := (idx = 0) ? 1 : Mod(idx, n) + 1
+        targetHwnd := windows[nextIndex].hwnd
+        WinShow("ahk_id " targetHwnd)
+        WinActivate("ahk_id " targetHwnd)
         return
     }
 
@@ -971,23 +1008,60 @@ A_Programs: 当前用户开始菜单程序目录
 ^space::
 {
     qoderExeNames := ["Qoder CN IDE.exe"]
-    APP_PATH := A_ProgramsCommon "\Qoder\Qoder CN IDE.lnk"
+    APP_PATH := A_Programs "\Qoder CN IDE.lnk"
     ; Qoder GUI 进程名随版本变化：1.29+ 为 "Qoder IDE.exe"，旧版为 "Qoder.exe"
     ; （当前 "Qoder.exe" 实为无窗口的后端 shared-client 辅助进程）。
-    ; 依次按候选名查找真正拥有窗口的编辑器实例，保证跨版本稳定。
-    hwnd := 0
+    ; 收集所有候选进程名下真正拥有窗口的编辑器实例，保证跨版本稳定。
+    ; 按 PID 升序排序得到稳定顺序：WinGetList 返回的是 z-order，激活后窗口会
+    ; 置顶导致顺序变化，若直接按 z-order 轮询只会在最近两个窗口间来回，无法
+    ; 遍历全部实例；PID 不随激活改变，可实现真正的多实例轮询激活。
+    windows := []
     for exeName in qoderExeNames {
-        hwnd := WinExist("ahk_exe " exeName)
-        if hwnd
-            break
-    }
-    if hwnd {
-        if WinActive("ahk_id " hwnd) {
-            WinMinimize("ahk_id " hwnd)
-        } else {
-            WinShow("ahk_id " hwnd)
-            WinActivate("ahk_id " hwnd)
+        for hwnd in WinGetList("ahk_exe " exeName) {
+            pid := 0
+            try pid := WinGetPID("ahk_id " hwnd)
+            windows.Push({hwnd: hwnd, pid: pid})
         }
+    }
+
+    if windows.Length {
+        ; 按 PID 升序做插入排序（窗口数量极少，不依赖 Sort API，跨 AHK v2 版本稳定）
+        Loop windows.Length - 1 {
+            j := A_Index
+            while (j > 0 && windows[j].pid > windows[j + 1].pid) {
+                tmp := windows[j]
+                windows[j] := windows[j + 1]
+                windows[j + 1] := tmp
+                j--
+            }
+        }
+        n := windows.Length
+        ; 单实例：保持原有“激活 / 最小化”切换
+        if (n = 1) {
+            hwnd := windows[1].hwnd
+            if WinActive("ahk_id " hwnd) {
+                WinMinimize("ahk_id " hwnd)
+            } else {
+                WinShow("ahk_id " hwnd)
+                WinActivate("ahk_id " hwnd)
+            }
+            return
+        }
+
+        ; 多实例：定位当前活动窗口，激活其在排序列表中的下一个（末尾回到开头）
+        activeHwnd := WinActive("A")
+        idx := 0
+        for i, w in windows {
+            if (w.hwnd = activeHwnd) {
+                idx := i
+                break
+            }
+        }
+        ; 当前焦点不在任一实例上时从第一个开始，否则向后轮询
+        nextIndex := (idx = 0) ? 1 : Mod(idx, n) + 1
+        targetHwnd := windows[nextIndex].hwnd
+        WinShow("ahk_id " targetHwnd)
+        WinActivate("ahk_id " targetHwnd)
         return
     }
 
