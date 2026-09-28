@@ -101,9 +101,13 @@ pasteEnter(){
 
     ; 确保剪贴板内包含内容后再继续
     if ClipWait(1) {
-        ; 使用 SendInput 将按键一次性按顺序送入系统输入队列
-        ; Chromium 内核会按顺序同步处理队列中的按键，无需手动 Sleep
-        SendInput("^a^v{Enter}")
+        ; 新版有道内嵌 Chromium 会丢弃 SendInput 批量注入里紧贴字符的 Ctrl 修饰（症状：只看到 A/V 被输入）。
+        ; 可靠需同时满足两个条件：① 逐事件投递（keybd_event）；② 事件间有最小间隔。
+        ; 代码里不手写 Sleep：交给 SendEvent + SetKeyDelay 在 AHK 层统一控制间隔；
+        ; {Blind} 阻止 AHK 在注入前释放/重按物理 Win（Win+CapsLock 里的 Win 很可能还按着）。
+        SetKeyDelay 30
+        SendEvent "{Blind}{LCtrl down}a{LCtrl up}{LCtrl down}v{LCtrl up}{Enter}"
+        SetKeyDelay 10 ; 恢复 v2 默认 Delay，不影响脚本其它 Send/SendEvent
     }
 
     return
@@ -1399,26 +1403,60 @@ FindWechatArticleWindowUIA() {
     throw TargetError("未找到包含文章选项卡的微信窗口", -1)
 }
 
-; 抓取文章页面并解析 <title> 作为文章标题（选项卡 Name 异常时的兜底）
+; 抓取文章页面标题（选项卡 Name 异常时的兜底）。
+; 关键：微信文章页的 <title> 由前端 JS 动态注入，服务端返回的是空的 <title></title>，
+; 只匹配 <title> 永远拿不到标题。真实标题稳定地存在于 msg_title / og:title 字段中，
+; 因此按 msg_title → og:title → twitter:title → <title> 顺序提取（后者兼容非微信页面）。
 FetchPageTitle(url) {
     try {
         req := ComObject("WinHttp.WinHttpRequest.5.1")
         req.SetTimeouts(3000, 3000, 5000, 8000)
         req.Open("GET", url)
         req.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36")
+        req.SetRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        req.SetRequestHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         req.Send()
         if (req.Status != 200)
             return ""
-        if RegExMatch(req.ResponseText, "isU)<title[^>]*>(.*)</title>", &m) {
-            title := Trim(m[1])
-            title := RegExReplace(title, "s)\s+", " ")
-            return DecodeHtmlEntities(title)
-        }
+        html := req.ResponseText
+
+        ; 引号统一用 \x22(双引号) / \x27(单引号) 字符类，避免 AHK 字符串转义歧义
+        if RegExMatch(html, "s)msg_title\s*=\s*[\x22\x27](.+?)[\x22\x27]", &m)
+            return CleanTitle(m[1])
+        ; property 在 content 之前
+        if RegExMatch(html, "is)<meta[^>]+property\s*=\s*[\x22\x27]og:title[\x22\x27][^>]+content\s*=\s*[\x22\x27](.+?)[\x22\x27]", &m)
+            return CleanTitle(m[1])
+        ; content 在 property 之前（属性顺序不固定，两种都要试）
+        if RegExMatch(html, "is)<meta[^>]+content\s*=\s*[\x22\x27](.+?)[\x22\x27][^>]+property\s*=\s*[\x22\x27]og:title[\x22\x27]", &m)
+            return CleanTitle(m[1])
+        if RegExMatch(html, "is)<meta[^>]+name\s*=\s*[\x22\x27]twitter:title[\x22\x27][^>]+content\s*=\s*[\x22\x27](.+?)[\x22\x27]", &m)
+            return CleanTitle(m[1])
+        ; 最后兼容普通页面：真正的 <title> 有内容时用它
+        if RegExMatch(html, "is)<title[^>]*>(.+?)</title>", &m)
+            return CleanTitle(m[1])
     }
     return ""
 }
 
+; 统一清洗标题：去首尾空白、合并换行/多余空格、解码 HTML 实体
+CleanTitle(t) {
+    t := Trim(t)
+    t := RegExReplace(t, "s)\s+", " ")
+    t := DecodeHtmlEntities(t)
+    ; msg_title 里可能残留 JS 转义序列
+    t := StrReplace(t, "\x26", "&")
+    t := StrReplace(t, "\x3c", "<")
+    t := StrReplace(t, "\x3e", ">")
+    t := StrReplace(t, "\x22", '"')
+    return Trim(t)
+}
+
 DecodeHtmlEntities(s) {
+    ; 数字实体（十进制 &#nnn; 与十六进制 &#xhhh;）
+    while RegExMatch(s, "i)&#(\d+);", &m)
+        s := StrReplace(s, m[0], Chr(m[1]))
+    while RegExMatch(s, "i)&#x([0-9a-f]+);", &m)
+        s := StrReplace(s, m[0], Chr("0x" m[1]))
     s := StrReplace(s, "&lt;", "<")
     s := StrReplace(s, "&gt;", ">")
     s := StrReplace(s, "&quot;", '"')
@@ -1598,7 +1636,7 @@ GetUrlByRightClick(uiElement) {
     if !menuHwnd
         Sleep 80
 
-    SendEvent "{Down 2}{Enter}"
+    SendEvent "{Down 3}{Enter}"
 
     ; 4. 等待剪贴板
     if ClipWait(1.2) {

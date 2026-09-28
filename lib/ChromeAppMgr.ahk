@@ -217,9 +217,9 @@ GetAppCacheKey(url) {
 }
 
 ; 重建浏览器窗口缓存（App 标识 → hwnd）
-; 完全基于进程命令行构建，彻底不碰 UIA：直接复用 FindExistingAppWindow
-; （内部用 GetAppProcessCommandLine 读 --app=/--app-id= + host 匹配 + 窗口标题判据），
-; 既避免 UIA 的 JSExecute 往地址栏写 javascript: 的副作用，也不受 Chrome 更新/UIA 失效影响。
+; 直接复用 FindExistingAppWindow（现基于窗口标题扫描识别 PWA），不碰 UIA、
+; 也不依赖进程命令行（Chrome 主浏览器进程命令行不含 --app=，靠它匹配会漏检）。
+; 仅作 ActivateApp ② 兜底路径的快表；① 已能实时按标题复用，不依赖此缓存。
 BuildBrowserCache() {
     global hwndCache, CONFIG
     if !IsSet(hwndCache) || !hwndCache
@@ -256,13 +256,17 @@ GetAppProcessCommandLine(pid) {
         hProcess := DllCall("OpenProcess", "UInt", 0x1010, "Int", 0, "UInt", pid, "Ptr")
         if !hProcess
             return ""
-        buf := Buffer(32768, 0)
-        ; ProcessCommandLineInformation = 60
+        buf := Buffer(A_PtrSize, 0)
+        ; ProcessCommandLineInformation = 60；返回的是 PUNICODE_STRING 指针，不是结构体本身，
+        ; 必须先解引用再读 Length / Buffer（直接当结构体读会得到乱码 URL，导致永远匹配不上窗口）
         status := DllCall("ntdll\NtQueryInformationProcess", "Ptr", hProcess, "UInt", 60, "Ptr", buf, "UInt", buf.Size, "UInt*", 0, "UInt")
         DllCall("CloseHandle", "Ptr", hProcess)
         if (status = 0) {
-            strLen := NumGet(buf, 0, "UShort")
-            strPtr := NumGet(buf, A_PtrSize == 8 ? 8 : 4, "Ptr")
+            ustr := NumGet(buf, 0, "Ptr")
+            if !ustr
+                return ""
+            strLen := NumGet(ustr, 0, "UShort")
+            strPtr := NumGet(ustr, A_PtrSize == 8 ? 8 : 4, "Ptr")
             if (strLen > 0 && strPtr)
                 return StrGet(strPtr, strLen // 2, "UTF-16")
         }
@@ -294,33 +298,32 @@ IsRegularBrowserWindowTitle(title) {
         || InStr(title, " - Microsoft Edge") || InStr(title, " - Edge")
 }
 
-; 查找已存在的 PWA 窗口：按进程命令行 --app= 匹配（毫秒级，不受 Chrome 更新、
-; UIA 失败、缓存生命周期影响）。优先返回当前桌面可见窗口（DWMWA_CLOAKED=0），
-; 都不在当前桌面时回退首个匹配窗口。
+; 查找已存在的 PWA 窗口并复用。
+; 关键事实（实测）：Chrome 是"单浏览器进程"模型——当该 profile 已有浏览器进程在跑时，
+; 再次用 chrome --app= 启动，新进程只是通过 IPC 让【已存在的主浏览器进程】新开一个 App
+; 窗口后自己退出；而那个主浏览器进程自身命令行里【根本没有 --app=】（只有 --flag-switches-*）。
+; 因此靠"读窗口所属进程命令行匹配 --app="永远匹配不到，只会每次都新开窗口。
+; 正确做法（AHK 官方 WinExist 复用范式）：直接扫描该浏览器的顶层窗口，用【窗口标题】识别 PWA——
+;   · 真 PWA/App 窗口标题 = 页面标题本身（如 "DMS - Data Management Service"），无浏览器后缀；
+;   · 普通标签窗口标题带 " - Google Chrome"/" - Edge" 等后缀，用 IsRegularBrowserWindowTitle 排除。
+; 命中 app["title"] 且非普通窗口即为要复用的 PWA；优先当前桌面可见(DWMWA_CLOAKED=0)者。
 FindExistingAppWindow(app) {
     exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
-    targetHost := GetUrlHost(app["url"])
-    if (targetHost == "")
+    wantTitle := app["title"]
+    if (wantTitle == "")
         return 0
 
     fallback := 0
-    cmdCache := Map()  ; 同一进程的多个窗口共享命令行，避免重复读内核
     for hwnd in WinGetList("ahk_exe " exe) {
         title := ""
         try title := WinGetTitle("ahk_id " hwnd)
         if (title == "")
             continue
-        ; 排除普通浏览器窗口（共享主进程里的普通标签窗口，标题带产品名后缀）
+        ; 排除普通浏览器窗口（标题带浏览器产品名后缀）
         if IsRegularBrowserWindowTitle(title)
             continue
-        pid := 0
-        try pid := WinGetPID("ahk_id " hwnd)
-        if !pid
-            continue
-        if !cmdCache.Has(pid)
-            cmdCache[pid] := ExtractAppUrlFromCmd(GetAppProcessCommandLine(pid))
-        appUrl := cmdCache[pid]
-        if (appUrl == "" || GetUrlHost(appUrl) != targetHost)
+        ; PWA 窗口标题就是页面标题，须包含配置的 App 标题
+        if !InStr(title, wantTitle)
             continue
 
         ; DWMWA_CLOAKED：非当前桌面的窗口 cloaked=1
@@ -340,9 +343,9 @@ ActivateApp(app) {
     if !IsSet(hwndCache) || !hwndCache
         hwndCache := Map()
 
-    ; ① 首选进程级识别：命令行 --app= 匹配，实时扫描，永远只复用已存在的窗口。
-    ;    （旧方案只靠启动时建一次缓存，脚本启动后打开的窗口不在缓存里，
-    ;      导致 #快捷键总是新开；UIA 取 URL 失败时缓存也建不起来）
+    ; ① 首选：扫描该浏览器顶层窗口，按标题识别并复用已存在的 PWA 窗口，实时、无缓存依赖。
+    ;    （不能用"进程命令行 --app= 匹配"：Chrome 单浏览器进程模型下主进程命令行不含 --app=，
+    ;     永远匹配不到，导致每次新开窗口——见 FindExistingAppWindow 注释）
     existing := FindExistingAppWindow(app)
     if existing {
         if WinActive("ahk_id " existing)
@@ -353,7 +356,7 @@ ActivateApp(app) {
     }
 
     ; ② 兜底路径：缓存里已有该 App 的窗口句柄时直接激活
-    ;    （缓存现由 BuildBrowserCache 基于进程命令行构建，只收录真正的 PWA 窗口）
+    ;    （缓存由 BuildBrowserCache 基于窗口标题扫描构建，只收录真正的 PWA 窗口）
     exe := app["browser"] = "chrome" ? "chrome.exe" : "msedge.exe"
 
     targetURL := GetAppCacheKey(app["url"])

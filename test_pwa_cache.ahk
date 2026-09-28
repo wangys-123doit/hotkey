@@ -36,12 +36,16 @@ GetProcessCommandLine(pid) {
         hProcess := DllCall("OpenProcess", "UInt", 0x1010, "Int", 0, "UInt", pid, "Ptr")
         if !hProcess
             return ""
-        buf := Buffer(32768, 0)
+        buf := Buffer(A_PtrSize, 0)
+        ; ProcessCommandLineInformation = 60；参数是 PUNICODE_STRING 指针，需先解引用再读字段
         status := DllCall("ntdll\NtQueryInformationProcess", "Ptr", hProcess, "UInt", 60, "Ptr", buf, "UInt", buf.Size, "UInt*", 0, "UInt")
         DllCall("CloseHandle", "Ptr", hProcess)
         if (status = 0) {
-            strLen := NumGet(buf, 0, "UShort")
-            strPtr := NumGet(buf, A_PtrSize == 8 ? 8 : 4, "Ptr")
+            ustr := NumGet(buf, 0, "Ptr")
+            if !ustr
+                return ""
+            strLen := NumGet(ustr, 0, "UShort")
+            strPtr := NumGet(ustr, A_PtrSize == 8 ? 8 : 4, "Ptr")
             if (strLen > 0 && strPtr)
                 return StrGet(strPtr, strLen // 2, "UTF-16")
         }
