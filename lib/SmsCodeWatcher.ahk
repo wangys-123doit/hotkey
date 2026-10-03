@@ -1,12 +1,11 @@
 ﻿/**
  * SmsCodeWatcher - 从 Phone Link 应用中主动抓取短信验证码到剪贴板
  *
- * 原理：通过热键激活 PhoneExperienceHost.exe，用 UIA 打开第一条会话，
- * 在右侧消息气泡上触发右键菜单"全部复制"获取短信全文，正则提取验证码写入剪贴板。
+ * 原理：通过热键激活 PhoneExperienceHost.exe，提示用户手动右键点击目标短信，
+ * 脚本监听右键事件后自动选择菜单项并提取验证码。
  *
  * 热键：Win+Alt+C（在 hotkey.ahk 中绑定）
- * 依赖：lib\UIA.ahk（用于 ElementFromHandle、FindElement、ElementFromPoint、
- *       GetFocusedElement、ShowContextMenu、菜单项定位）
+ * 依赖：lib\UIA.ahk（用于 ElementFromHandle、FindElement、菜单项定位）
  */
 class SmsCodeWatcher
 {
@@ -26,7 +25,7 @@ class SmsCodeWatcher
 
     ; 多模式正则提取（按序回退，命中即取捕获组）
     static _patterns := [
-        "(?:验证码|校验码|动态码|授权码|确认码|激活码|安全码)[：:是为]?\s*([0-9]{4,8})",
+        "(?:验证码|校验码|动态码|授权码|确认码|激活码|安全码)[：:是为\s]*([0-9]{4,8})",
         "([0-9]{4,8})\s*(?:是您的|为您的)?\s*(?:验证码|校验码|动态码)",
         "i)(?:verification|verify|otp|security)\s*code\s*(?:is\s*)?[：:]?\s*([0-9]{4,8})",
         "i)\bcode\s*(?:is\s*)?[：:]?\s*([0-9]{4,8})"
@@ -71,126 +70,55 @@ class SmsCodeWatcher
             SetTimer(() => ToolTip(), -2000)
             return ""
         }
-        Sleep(300)
+        Sleep(300)  ; 等待窗口激活后布局稳定
 
-        ; 2. 最小化再恢复，强制重置焦点到默认起始位置（不依赖坐标，100%可靠）
-        WinMinimize(winTitle)
-        Sleep(80)
-        WinActivate(winTitle)
-        if !WinWaitActive(winTitle,, 2) {
-            ToolTip("无法激活 Phone Link")
-            SetTimer(() => ToolTip(), -2000)
-            return ""
-        }
-        Sleep(300)  ; 等待窗口从最小化恢复后布局完全稳定
-
-        ; 获取窗口坐标（后续步骤 4 定位消息区域需要）
-        local wx, wy, ww, wh
-        WinGetPos(&wx, &wy, &ww, &wh, winTitle)
-
-        ; 3. Tab 导航到第一条短信并按 Enter 打开会话
-        Send("{Tab " SmsCodeWatcher._tabCount "}")
-        Sleep(100)
-        Send("{Enter}")
-        Sleep(600)  ; 等待会话面板加载和消息气泡渲染
-
-        ; 4. 定位消息区域并触发惰性实体化
-        ; 消息气泡通常在窗口右侧 2/3 区域的下半部分（使用步骤2已获取的窗口坐标）
-        ; 目标坐标：窗口右侧面板中下部（最新消息通常在底部）
-        local bubbleX := wx + ww * 3 // 4
-        local bubbleY := wy + wh * 3 // 4
-
-        ; hover 到消息区域触发实体化
-        MouseMove(bubbleX, bubbleY, 5)
-        Sleep(200)
-        ; ElementFromPoint 强制该点节点实体化
-        local bubbleEl := ""
-        try bubbleEl := UIA.ElementFromPoint(bubbleX, bubbleY)
-        Sleep(200)
-
-        ; 5. 尝试找到消息气泡元素（Text 类型或最近的 ListItem）
-        ; 如果 ElementFromPoint 拿到的元素太小或不对，向上找父级
-        local targetEl := bubbleEl
-        if (targetEl) {
-            ; 尝试获取更精确的位置
-            local targetRect := ""
-            try targetRect := targetEl.Location
-            if (targetRect && targetRect.w > 0 && targetRect.h > 0 && targetRect.x > -20000) {
-                bubbleX := targetRect.x + targetRect.w // 2
-                bubbleY := targetRect.y + targetRect.h // 2
-            }
-        }
-
-        ; 6. 保存剪贴板并清空
+        ; 2. 保存剪贴板并清空
         local savedClip := ClipboardAll()
         A_Clipboard := ""
 
-        ; 7. 在消息气泡上执行右键（hover + 物理右键）
-        MouseMove(bubbleX, bubbleY, 3)
-        Sleep(250)  ; 确保 hover 生效
+        ; 3. 提示用户手动右键点击目标短信
+        ToolTip("请手动右键点击目标短信...")
 
-        local menuOpened := false
+        ; 4. 监听右键点击事件（轮询 GetAsyncKeyState，VK_RBUTTON = 0x02）
+        local startTime := A_TickCount
+        local rightClicked := false
+        local timeoutMs := 5000  ; 5秒超时
 
-        ; 方案一：物理右键
-        Click(bubbleX, bubbleY, "Right", "Down")
-        Sleep(80)
-        Click(bubbleX, bubbleY, "Right", "Up")
-        menuOpened := SmsCodeWatcher._WaitForMenu(800)
-
-        ; 方案二：UIA ShowContextMenu
-        if (!menuOpened && targetEl) {
-            Sleep(100)
-            try {
-                targetEl.ShowContextMenu()
-                menuOpened := SmsCodeWatcher._WaitForMenu(800)
+        while (A_TickCount - startTime < timeoutMs) {
+            ; 检测右键是否按下（最高位为1表示当前按下）
+            if (DllCall("GetAsyncKeyState", "Int", 0x02) & 0x8000) {
+                rightClicked := true
+                break
             }
+            Sleep(50)  ; 50ms 轮询间隔
         }
 
-        ; 方案三：键盘回退
-        if (!menuOpened && targetEl) {
-            try targetEl.SetFocus()
-            Sleep(100)
-            Send("{AppsKey}")
-            menuOpened := SmsCodeWatcher._WaitForMenu(600)
+        ; 清除提示
+        ToolTip()
+
+        if (!rightClicked) {
+            A_Clipboard := savedClip
+            ToolTip("等待右键超时，已取消")
+            SetTimer(() => ToolTip(), -2000)
+            return ""
         }
+
+        ; 5. 等待上下文菜单出现（用户右键后菜单需要时间渲染）
+        Sleep(300)
+        local menuOpened := SmsCodeWatcher._WaitForMenu(1500)
 
         if (!menuOpened) {
             A_Clipboard := savedClip
-            ToolTip("无法弹出右键菜单")
+            ToolTip("未检测到右键菜单")
             SetTimer(() => ToolTip(), -2000)
             return ""
         }
         Sleep(200)  ; 菜单完全渲染
 
-        ; 8. 在弹出菜单中查找"全部复制"或"复制"并点击
-        local menuItem := ""
-        try {
-            local popupHwnd := WinExist("ahk_class Microsoft.UI.Content.PopupWindowSiteBridge ahk_exe PhoneExperienceHost.exe")
-            if (popupHwnd) {
-                local popupEl := UIA.ElementFromHandle(popupHwnd)
-                ; 优先找"全部复制"，其次找"复制"
-                try menuItem := popupEl.FindElement({Name: "全部复制"}, 4)
-                if (!menuItem) {
-                    try menuItem := popupEl.FindElement({Name: "复制"}, 4)
-                }
-                if (!menuItem) {
-                    try menuItem := popupEl.FindElement({Type: "MenuItem"}, 4)  ; 兜底取第一个菜单项
-                }
-            }
-        }
-        if (menuItem) {
-            try {
-                menuItem.Click()
-            } catch {
-                menuItem.Invoke()
-            }
-        } else {
-            ; UIA 找不到菜单项，键盘回退
-            Send("{End}{Enter}")
-        }
-        Sleep(150)
+        ; 6. 键盘选择"全部复制"（菜单最后一项：Up 键定位 + Enter 确认，一次性发送）
+        SendEvent("{Up}{Enter}")
 
-        ; 9. 等待剪贴板更新
+        ; 7. 等待剪贴板更新
         if !ClipWait(2) {
             A_Clipboard := savedClip
             ToolTip("复制超时")
@@ -199,13 +127,13 @@ class SmsCodeWatcher
         }
         local smsText := A_Clipboard
 
-        ; 10. Escape 清理
+        ; 8. Escape 清理
         Send("{Escape}")
 
         if SmsCodeWatcher.Debug
             OutputDebug("[SmsCodeWatcher] 短信原文: " smsText "`n")
 
-        ; 11. 检查内容
+        ; 9. 检查内容
         if (smsText = "") {
             A_Clipboard := savedClip
             ToolTip("未能复制短信内容")
@@ -213,7 +141,7 @@ class SmsCodeWatcher
             return ""
         }
 
-        ; 12. 提取验证码
+        ; 10. 提取验证码
         local code := SmsCodeWatcher._ExtractCode(smsText)
         if (code = "") {
             A_Clipboard := savedClip
@@ -222,7 +150,7 @@ class SmsCodeWatcher
             return ""
         }
 
-        ; 13. 去重：60秒内相同验证码不重复触发
+        ; 11. 去重：60秒内相同验证码不重复触发
         local now := A_TickCount
         if (code = SmsCodeWatcher._lastCode && (now - SmsCodeWatcher._lastTime) < 60000) {
             A_Clipboard := savedClip
@@ -231,22 +159,22 @@ class SmsCodeWatcher
         SmsCodeWatcher._lastCode := code
         SmsCodeWatcher._lastTime := now
 
-        ; 14. 提取公司名（短信开头【XXX】格式）
+        ; 12. 提取公司名（短信开头【XXX】格式）
         local company := ""
         if RegExMatch(smsText, "【(.+?)】", &m)
             company := m[1]
 
-        ; 15. 写入验证码到剪贴板
+        ; 13. 写入验证码到剪贴板
         Critical "On"
         A_Clipboard := code
         Critical "Off"
 
-        ; 16. 提示
+        ; 14. 提示
         local tip := (company ? "【" company "】" : "") "验证码 " code " 已复制"
         ToolTip(tip)
         SetTimer(() => ToolTip(), -2500)
 
-        ; 17. 30秒后恢复剪贴板
+        ; 15. 30秒后恢复剪贴板
         SmsCodeWatcher._clipSaved := savedClip
         SetTimer(() => SmsCodeWatcher._RestoreClipboard(savedClip, code), -30000)
 
