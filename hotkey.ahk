@@ -65,6 +65,8 @@ global D_Programs := RegExReplace(A_ProgramFiles, "(?i)^C:", "D:")
 
 ; 窗口切换与应用启动框架已拆分到独立模块
 #Include %A_ScriptDir%\lib\WindowToggle.ahk
+; 短信验证码自动提取（Phone Link toast 监听）
+#Include %A_ScriptDir%\lib\SmsCodeWatcher.ahk
 
 ; BlockWinPFor / ToggleWindow 系列 / GetMainWindowByExe 已迁移至 WindowToggle.ahk
 
@@ -298,6 +300,9 @@ LWin & z::
     ToggleWindow(ahk_exe, APP_PROTOCOL)
 }
 
+; Win+Alt+C 从 Phone Link 抓取第一条短信验证码
+#!c::SmsCodeWatcher.GrabFromPhoneLink()
+
 ; win+ctrl+T打开Telegram
 #^t::
 {
@@ -377,6 +382,8 @@ class ScriptLifecycle
 ; （修饰键仍按住、Chrome 在前台）时，这串地址栏内容会被注入/覆盖到当前页面。
 ; 且 ActivateApp 现以进程级 FindExistingAppWindow 为首选路径，无需该缓存。
 ; ScriptLifecycle.RegisterReload(BuildBrowserCache)
+
+; 短信验证码：不再需要 UIA 事件监听，改为热键主动抓取（Win+Alt+C）
 
 ScriptLifecycle.Init()
 
