@@ -5,6 +5,7 @@
 - [UIA.ahk](file://lib/UIA.ahk)
 - [UIA_Browser.ahk](file://lib/UIA_Browser.ahk)
 - [ChromeAppMgr.ahk](file://lib/ChromeAppMgr.ahk)
+- [SmsCodeWatcher.ahk](file://lib/SmsCodeWatcher.ahk)
 - [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
 - [README.md](file://README.md)
@@ -12,11 +13,11 @@
 
 ## 更新摘要
 **变更内容**
-- 改进了浏览器UIA自动化，增强了URL提取和元素交互模式
-- 优化了不同浏览器版本的兼容性处理
-- 增强了Chrome应用管理器中的URL获取逻辑
-- 改进了浏览器窗口可见性检测和激活机制
-- 提升了JavaScript执行和返回值处理的可靠性
+- 重构了SmsCodeWatcher实现，废弃无效的toast事件监听方案
+- 新增Phone Link应用短信验证码主动抓取功能
+- 实现了Win+Alt+C热键绑定到验证码提取流程
+- 增强了UIA框架在Phone ExperienceHost.exe中的应用支持
+- 改进了剪贴板管理和验证码去重机制
 
 ## 目录
 1. [简介](#简介)
@@ -41,6 +42,7 @@ UI自动化框架的核心目标是：
 - 支持屏幕读取器集成
 - **增强IDE集成能力**：通过UIA.ElementFromHandle提供更可靠的IDE窗口元素检测
 - **改进浏览器自动化**：提供更稳定的URL提取和元素交互模式
+- **新增Phone Link集成**：支持从Phone Link应用中主动抓取短信验证码
 
 ## 项目结构
 
@@ -51,6 +53,7 @@ graph TB
 subgraph "核心框架"
 UIA[UIA.ahk<br/>主UIA框架]
 Browser[UIA_Browser.ahk<br/>浏览器扩展]
+SMS[SmsCodeWatcher.ahk<br/>短信验证码监控]
 end
 subgraph "应用层"
 Hotkey[hotkey.ahk<br/>主脚本]
@@ -63,16 +66,20 @@ Jxon[Jxon.ahk<br/>JSON处理]
 Templates[templates/<br/>模板文件]
 end
 UIA --> Browser
+UIA --> SMS
 Hotkey --> UIA
 Hotkey --> Browser
+Hotkey --> SMS
 ChromeMgr --> Browser
 NetworkCtrl --> UIA
 Browser --> UIA
+SMS --> UIA
 ```
 
 **图表来源**
 - [UIA.ahk](file://lib/UIA.ahk)
 - [UIA_Browser.ahk](file://lib/UIA_Browser.ahk)
+- [SmsCodeWatcher.ahk](file://lib/SmsCodeWatcher.ahk)
 - [ChromeAppMgr.ahk](file://lib/ChromeAppMgr.ahk)
 - [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
@@ -139,9 +146,57 @@ IUIAutomationElement --> IUIAutomationCacheRequest
 - [UIA.ahk:1-100](file://lib/UIA.ahk#L1-L100)
 - [UIA.ahk:51-150](file://lib/UIA.ahk#L51-L150)
 
+### Phone Link短信验证码监控
+
+**新增** SmsCodeWatcher模块实现了从Phone Link应用中主动抓取短信验证码的功能：
+
+#### 核心功能特性
+- **主动抓取模式**：通过热键触发，避免无效的toast事件监听
+- **用户交互引导**：提示用户手动右键点击目标短信
+- **智能菜单识别**：自动检测WinUI 3上下文菜单
+- **正则表达式提取**：支持多种验证码格式的智能匹配
+- **剪贴板管理**：临时保存和恢复剪贴板内容
+- **防重复机制**：60秒内相同验证码不重复触发
+
+#### 工作流程
+
+```mermaid
+sequenceDiagram
+participant User as 用户
+participant Script as SmsCodeWatcher
+participant PhoneLink as Phone Link应用
+participant Clipboard as 剪贴板
+User->>Script : 按下Win+Alt+C
+Script->>PhoneLink : 激活PhoneExperienceHost.exe
+Script->>User : 提示右键点击目标短信
+User->>PhoneLink : 右键点击短信
+Script->>PhoneLink : 等待菜单出现
+Script->>PhoneLink : 发送{Up}{Enter}选择"全部复制"
+PhoneLink->>Clipboard : 复制短信内容
+Script->>Script : 正则提取验证码
+Script->>Clipboard : 写入验证码
+Script-->>User : 显示验证码已复制
+```
+
+**图表来源**
+- [SmsCodeWatcher.ahk:52-187](file://lib/SmsCodeWatcher.ahk#L52-L187)
+
+#### 热键绑定
+
+**新增** Win+Alt+C热键绑定到验证码提取功能：
+
+| 热键 | 功能 | 说明 |
+|------|------|------|
+| Win+Y | 切换Phone Link窗口 | 保持原有功能 |
+| Win+Alt+C | 抓取短信验证码 | 新增值码提取功能 |
+
+**章节来源**
+- [SmsCodeWatcher.ahk:1-224](file://lib/SmsCodeWatcher.ahk#L1-L224)
+- [hotkey.ahk:303-304](file://hotkey.ahk#L303-L304)
+
 ### 增强的浏览器自动化
 
-**更新** 浏览器自动化模块得到了显著改进，特别是在URL提取和元素交互方面：
+浏览器自动化模块得到了显著改进，特别是在URL提取和元素交互方面：
 
 #### 改进的URL提取机制
 
@@ -168,7 +223,7 @@ Script-->>Script : 处理特殊URL映射
 
 #### 增强的元素交互模式
 
-**新增** 针对不同浏览器版本的优化：
+针对不同浏览器版本的优化：
 
 1. **Chrome/Edge优化**：使用`GetCurrentDocumentElement().Value`获取真实URL
 2. **Firefox优化**：通过地址栏直接获取URL
@@ -247,6 +302,7 @@ AHK[AutoHotkey v2<br/>脚本引擎]
 Scripts[用户脚本<br/>hotkey.ahk]
 ChromeMgr[Chrome应用管理<br/>ChromeAppMgr.ahk]
 NetworkCtrl[网络控制器<br/>OpenControllerFromNetwork.ahk]
+SMSApp[SMS验证码应用<br/>SmsCodeWatcher.ahk]
 end
 subgraph "UIA框架层"
 Core[UIA核心<br/>UIA.ahk]
@@ -261,10 +317,13 @@ end
 AHK --> Scripts
 AHK --> ChromeMgr
 AHK --> NetworkCtrl
+AHK --> SMSApp
 Scripts --> Core
 Scripts --> Browser
+Scripts --> SMSApp
 ChromeMgr --> Browser
 NetworkCtrl --> Core
+SMSApp --> Core
 Core --> UIA_API
 Browser --> Core
 Core --> COM
@@ -277,6 +336,7 @@ COM --> Windows
 - [UIA.ahk:1-50](file://lib/UIA.ahk#L1-L50)
 - [ChromeAppMgr.ahk:1-50](file://lib/ChromeAppMgr.ahk#L1-L50)
 - [OpenControllerFromNetwork.ahk:1-50](file://OpenControllerFromNetwork.ahk#L1-L50)
+- [SmsCodeWatcher.ahk:1-10](file://lib/SmsCodeWatcher.ahk#L1-L10)
 
 ## 详细组件分析
 
@@ -306,7 +366,7 @@ UIA-->>Script : 返回可用的UIA实例
 
 #### 增强的元素定位策略
 
-**更新** UIA框架现在提供了更强大的元素定位方法，特别是针对IDE应用的优化：
+UIA框架现在提供了更强大的元素定位方法，特别是针对IDE应用的优化：
 
 ```mermaid
 flowchart TD
@@ -336,9 +396,56 @@ Direct --> Return
 - [UIA.ahk:945-1009](file://lib/UIA.ahk#L945-L1009)
 - [UIA.ahk:1104-1127](file://lib/UIA.ahk#L1104-L1127)
 
+### Phone Link短信验证码提取工作流
+
+**新增** 基于主动抓取的Phone Link短信验证码提取工作流：
+
+#### 验证码提取流程
+
+```mermaid
+flowchart TD
+Start([启动验证码提取]) --> CheckApp{检查Phone Link运行}
+CheckApp --> |未运行| LaunchApp[启动PhoneExperienceHost.exe]
+CheckApp --> |已运行| ActivateApp[激活Phone Link窗口]
+LaunchApp --> ActivateApp
+ActivateApp --> SaveClip[保存剪贴板内容]
+SaveClip --> PromptUser[提示用户右键点击短信]
+PromptUser --> WaitForRightClick[轮询检测右键点击]
+WaitForRightClick --> |超时| Timeout[超时取消]
+WaitForRightClick --> |检测到| WaitMenu[等待菜单渲染]
+WaitMenu --> SelectCopy[发送{Up}{Enter}选择复制]
+SelectCopy --> WaitClipboard[等待剪贴板更新]
+WaitClipboard --> ExtractCode[正则提取验证码]
+ExtractCode --> ValidateCode{验证码有效?}
+ValidateCode --> |无效| InvalidCode[提示无验证码]
+ValidateCode --> |有效| Deduplicate{去重检查}
+Deduplicate --> |重复| Duplicate[跳过重复验证码]
+Deduplicate --> |唯一| WriteClip[写入验证码到剪贴板]
+WriteClip --> ShowTip[显示验证码提示]
+ShowTip --> RestoreClip[定时恢复剪贴板]
+RestoreClip --> Complete([完成])
+Timeout --> End([结束])
+InvalidCode --> End
+Duplicate --> End
+```
+
+**图表来源**
+- [SmsCodeWatcher.ahk:52-187](file://lib/SmsCodeWatcher.ahk#L52-L187)
+
+#### 菜单检测机制
+
+Phone Link使用WinUI 3框架，需要特殊的菜单检测逻辑：
+
+1. **PopupWindowSiteBridge检测**：检测WinAppSDK弹出层宿主窗口
+2. **CoreWindow检测**：检测通用弹出菜单窗口类
+3. **超时保护**：防止长时间等待菜单渲染
+
+**章节来源**
+- [SmsCodeWatcher.ahk:195-208](file://lib/SmsCodeWatcher.ahk#L195-L208)
+
 ### 增强的IDE集成工作流
 
-**新增** 基于UIA.ElementFromHandle的IDE集成工作流提供了更高的可靠性：
+基于UIA.ElementFromHandle的IDE集成工作流提供了更高的可靠性：
 
 #### IDEA搜索对话框处理流程
 
@@ -371,7 +478,7 @@ TryCatch --> |是| WaitInput
 
 ### 改进的浏览器URL处理
 
-**新增** 浏览器URL提取和处理的改进：
+浏览器URL提取和处理的改进：
 
 #### 智能URL获取流程
 
@@ -502,6 +609,7 @@ Level3 --> Type3
 4. **内存管理**：自动释放不再使用的资源
 5. **IDE专用优化**：针对IDE应用的特殊缓存策略
 6. **浏览器优化**：改进的URL提取和元素交互性能
+7. **Phone Link优化**：优化的菜单检测和验证码提取性能
 
 **章节来源**
 - [UIA.ahk:1145-1183](file://lib/UIA.ahk#L1145-L1183)
@@ -565,8 +673,10 @@ UIA_Framework --> AHK_Core
 ```mermaid
 graph TD
 UIA_Framework[UIA框架] --> Browser_Extension[浏览器扩展]
+UIA_Framework --> SMS_Watcher[短信验证码监控]
 UIA_Framework --> Utils[工具组件]
 Browser_Extension --> UIA_Framework
+SMS_Watcher --> UIA_Framework
 Utils --> UIA_Framework
 NetworkCtrl[网络控制器] --> UIA_Framework
 IDE_Integration[IDE集成] --> UIA_Framework
@@ -587,6 +697,7 @@ Browser_Extension --> Common
 - [UIA_Browser.ahk:458-488](file://lib/UIA_Browser.ahk#L458-L488)
 - [ChromeAppMgr.ahk:220-250](file://lib/ChromeAppMgr.ahk#L220-L250)
 - [OpenControllerFromNetwork.ahk:45-50](file://OpenControllerFromNetwork.ahk#L45-L50)
+- [SmsCodeWatcher.ahk:1-10](file://lib/SmsCodeWatcher.ahk#L1-L10)
 
 **章节来源**
 - [hotkey.ahk:3-6](file://hotkey.ahk#L3-L6)
@@ -603,6 +714,7 @@ Browser_Extension --> Common
 3. **批量操作**：支持批量元素查找和操作减少API调用次数
 4. **IDE专用优化**：针对IDE应用的快速路径查找
 5. **浏览器优化**：改进的URL提取和元素交互性能
+6. **Phone Link优化**：优化的菜单检测和验证码提取性能
 
 #### 内存管理
 
@@ -647,9 +759,22 @@ ideaEl := UIA.ElementFromHandle("ahk_exe idea64.exe")
 inputEl := ideaEl.WaitElement({Type:"Edit"}, 2000)
 ```
 
+#### Phone Link短信验证码提取失败
+
+**新增** Phone Link短信验证码提取的常见问题：
+
+**问题描述**：无法从Phone Link中提取短信验证码
+
+**解决方案**：
+1. 确保Phone Link应用已正确安装和运行
+2. 检查PhoneExperienceHost.exe进程是否存在
+3. 确认用户能够手动右键点击短信并看到菜单
+4. 验证WinUI 3菜单检测逻辑是否正常工作
+5. 检查剪贴板权限和访问权限
+
 #### 浏览器URL获取失败
 
-**新增** 浏览器URL获取的常见问题：
+浏览器URL获取的常见问题：
 
 **问题描述**：无法获取当前浏览器的URL
 
@@ -661,7 +786,7 @@ inputEl := ideaEl.WaitElement({Type:"Edit"}, 2000)
 
 #### IDEA集成问题
 
-**新增** IDEA集成功能的常见问题：
+IDEA集成功能的常见问题：
 
 **问题描述**：IDEA搜索对话框无法正确识别
 
@@ -685,6 +810,7 @@ inputEl := ideaEl.WaitElement({Type:"Edit"}, 2000)
 - [UIA.ahk:1297-1333](file://lib/UIA.ahk#L1297-L1333)
 - [OpenControllerFromNetwork.ahk:45-50](file://OpenControllerFromNetwork.ahk#L45-L50)
 - [ChromeAppMgr.ahk:229-233](file://lib/ChromeAppMgr.ahk#L229-L233)
+- [SmsCodeWatcher.ahk:52-187](file://lib/SmsCodeWatcher.ahk#L52-L187)
 
 ### 错误处理最佳实践
 
@@ -731,6 +857,7 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 5. **灵活的事件处理**：支持多种类型的UIA事件监听
 6. **增强的IDE集成**：通过UIA.ElementFromHandle提供更可靠的IDE应用支持
 7. **改进的浏览器自动化**：提供更稳定的URL提取和元素交互模式
+8. **新增Phone Link集成**：支持从Phone Link应用中主动抓取短信验证码
 
 ### 技术特色
 
@@ -740,6 +867,7 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 - **稳定可靠**：完善的错误处理和资源管理机制
 - **IDE专用优化**：针对IDE应用的特殊优化和容错机制
 - **浏览器兼容性**：支持多种浏览器版本和类型的自动化
+- **Phone Link优化**：专门的短信验证码提取功能和WinUI 3菜单检测
 
 ### 应用场景
 
@@ -751,15 +879,18 @@ hotkey项目的UI自动化框架是一个功能强大、设计精良的自动化
 - 跨平台应用程序控制
 - **IDE开发工作流集成**：与IDEA等开发工具的无缝集成
 - **浏览器自动化**：Web应用测试和自动化操作
+- **移动设备集成**：通过Phone Link进行手机短信验证码提取
 
 ### 最新改进
 
-**新增** 通过改进的浏览器自动化功能，框架现在能够：
+通过改进的浏览器自动化功能和新增的Phone Link集成，框架现在能够：
 - 提供更稳定的URL提取机制，支持多种浏览器类型
 - 使用JavaScript作为URL获取的回退方案
 - 改进浏览器窗口可见性检测和激活逻辑
 - 增强不同浏览器版本的兼容性处理
 - 优化Chrome应用管理器的URL匹配和窗口激活
 - 提供更好的错误处理和异常恢复机制
+- **新增Phone Link短信验证码提取**：通过Win+Alt+C热键主动抓取短信验证码
+- **改进的用户体验**：直观的提示信息和错误反馈机制
 
-通过合理使用这个框架，开发者可以高效地实现各种UI自动化需求，同时保持代码的可维护性和性能表现。特别是在IDE集成和浏览器自动化方面，新的改进为开发工作流和Web应用测试提供了更强的支持。
+通过合理使用这个框架，开发者可以高效地实现各种UI自动化需求，同时保持代码的可维护性和性能表现。特别是在IDE集成、浏览器自动化和Phone Link集成方面，新的改进为开发工作流、Web应用测试和移动设备管理提供了更强的支持。
