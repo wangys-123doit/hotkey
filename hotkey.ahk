@@ -301,7 +301,7 @@ LWin & z::
 }
 
 ; Win+Alt+C 从 Phone Link 抓取第一条短信验证码
-#!c::SmsCodeWatcher.GrabFromPhoneLink()
+#^y::SmsCodeWatcher.GrabFromPhoneLink()
 
 ; win+ctrl+T打开Telegram
 #^t::
@@ -1591,15 +1591,25 @@ AddNoteToObsidian(parentDir,noteName,content) {
         ; 原始路径：微信公众号文章/2026-01-28
         fullPath := parentDir "/" noteName
 
-        ToolTip("正在保存公众号文章到 " vaultPath "\\" StrReplace(fullPath, "/", "\\") " ...")
+        ; 直接写入 vault 目录内的 Markdown 文件，避免 obsidian:// URI 的内容长度限制
+        ; (URI 经 Windows ShellExecute/协议处理器传递时长度受限，粘贴 40+ 条标题等超长内容会保存失败)
+        filePath := vaultPath "\\" StrReplace(fullPath, "/", "\\") ".md"
+
+        ; 确保目标目录存在（追加语义下文件不存在会自动新建）
+        SplitPath(filePath, , &outDir)
+        if !DirExist(outDir)
+            DirCreate outDir
+
+        ToolTip("正在保存到 " filePath " ...")
         SetTimer(() => ToolTip(), -3000)
 
-        ; 构造 URI (append 参数表示追加)
-        ; 如果文件不存在会新建，存在则追加
-        obsUri := "obsidian://new?vault=" DBName "&file=" EncodeURL(fullPath) "&content=" EncodeURL("`n" content) "&append=true"
-
-        ; 执行
-        Run(obsUri)
+        ; 追加写入，UTF-8 编码，Obsidian 会自动检测文件变化并加载
+        try {
+            FileAppend("`n" content, filePath, "UTF-8")
+            ToolTip("已保存 " StrLen(content) " 字符到笔记")
+        } catch as e
+            ToolTip("保存失败：" e.Message)
+        SetTimer(() => ToolTip(), -3000)
 
     }
 }
