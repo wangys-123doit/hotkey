@@ -93,13 +93,18 @@ async function fetchLineColFromBridge() {
     const col = Number(json?.columnNumber ?? json?.col);
 
     let filePath = '';
-    const rawUrl = json?.fileUrl || '';
-    if (rawUrl && rawUrl.startsWith('file://')) {
-      try {
-        let p = decodeSafe(new URL(rawUrl).pathname || '');
-        if (/^[/][A-Za-z]:[/]/.test(p)) p = p.slice(1);
-        filePath = p.replace(/\\/g, '/');
-      } catch {}
+    // 优先用 bridge 依据 config.ini [DevServer] 还原出的磁盘绝对路径（比工作区搜索更精准）
+    if (json?.absolutePath) {
+      filePath = String(json.absolutePath).replace(/\\/g, '/');
+    } else {
+      const rawUrl = json?.fileUrl || '';
+      if (rawUrl && rawUrl.startsWith('file://')) {
+        try {
+          let p = decodeSafe(new URL(rawUrl).pathname || '');
+          if (/^[/][A-Za-z]:[/]/.test(p)) p = p.slice(1);
+          filePath = p.replace(/\\/g, '/');
+        } catch {}
+      }
     }
 
     return {

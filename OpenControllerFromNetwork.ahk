@@ -65,6 +65,37 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
     pos := GetLineNumberFromBridge()
     ToolTip("Line: " . pos.line . ", Col: " . pos.column . ", URL: " . pos.fileUrl)
     SetTimer () => ToolTip(), -2000 ; 2秒后消失
+
+    if !IsNumber(pos.line) {
+        ToolTip("获取位置信息失败: " pos.line)
+        SetTimer () => ToolTip(), -2000
+        return
+    }
+
+    fileUrl := pos.fileUrl
+    if !fileUrl {
+        ToolTip("未获取到文件 URL")
+        SetTimer () => ToolTip(), -2000
+        return
+    }
+
+    ; 将 dev-server / file / webpack URL 转为本地绝对路径（依赖 config.ini [DevServer] 映射）
+    filePath := DevToolsUrlToLocalPath(fileUrl)
+    if !filePath {
+        ToolTip("无法转换为本地路径: " fileUrl)
+        SetTimer () => ToolTip(), -3000
+        return
+    }
+
+/*     lineNum := Integer(pos.line)
+    colNum := Integer(pos.column)
+    if lineNum > 0 && colNum > 0 {
+        OpenInEditor(filePath, lineNum, colNum)
+    } else if lineNum > 0 {
+        OpenInEditor(filePath, lineNum)
+    } else {
+        OpenInEditor(filePath)
+    } */
 }
 
 ; Alt+Shift+O: 在当前虚拟桌面的 Qoder/VS Code 中打开 DevTools Source 文件并定位到行号列号
@@ -117,7 +148,7 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
 
 
 ; 当按下 Alt+Q 时，手动检测弹窗，若失败则强行唤醒 URL
-^!q::
+/* ^!q::
 {
     ; 发送原有的快捷键给 Chrome
     ; Send("!q")
@@ -153,7 +184,7 @@ global DEVTOOLS_MENU_ANCHOR_CACHE := {
 			SetTimer(() => ToolTip(), -3000)
 		}
 	}
-}
+} */
 #HotIf
 
 ; Prtsc键或者LCtrl都能打开chrome
@@ -1485,6 +1516,19 @@ DevToolsUrlToLocalPath(url) {
     ; http/https URL (如 Vite dev server): 可能包含 /@fs/D:/path
     if RegExMatch(url, "^https?://[^/]+/(?:@fs/)?([A-Za-z]:/.+)$", &m) {
         return m[1]
+    }
+    ; dev-server 根相对 URL（如 http://localhost:9999/src/views/xxx.vue）：
+    ;   本身不含磁盘绝对路径，按端口在 config.ini [DevServer] 表查项目根目录后拼接
+    if RegExMatch(url, "^https?://(?:localhost|127\.0\.0\.1):(\d+)/(.+)$", &m) {
+        port := m[1]
+        rel := m[2]
+        if (qpos := InStr(rel, "?"))
+            rel := SubStr(rel, 1, qpos - 1)
+        if (hpos := InStr(rel, "#"))
+            rel := SubStr(rel, 1, hpos - 1)
+        root := IniRead(A_ScriptDir "\config.ini", "DevServer", port, "")
+        if (root != "")
+            return root . "\" . StrReplace(rel, "/", "\")
     }
     ; 已经是本地路径
     if RegExMatch(url, "^[A-Za-z]:/", &_)

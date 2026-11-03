@@ -18,6 +18,7 @@
 - [OpenControllerFromNetwork.ahk](file://OpenControllerFromNetwork.ahk)
 - [ListQoderWindows.ahk](file://ListQoderWindows.ahk)
 - [hotkey.ahk](file://hotkey.ahk)
+- [superFlow.ahk](file://superFlow.ahk)
 - [README.md](file://README.md)
 </cite>
 
@@ -32,6 +33,7 @@
 - 优化路径解析算法，优先在已打开的工作区中搜索文件
 - 完善调试日志功能，新增 ide-vdm-debug.log 文件记录虚拟桌面操作详情
 - 改进错误处理和资源管理机制
+- **新增** Git提交快捷键优化：从 Alt+9 优化为 Ctrl+Shift+G，与VS Code标准快捷键保持一致
 
 ## 目录
 1. [简介](#简介)
@@ -59,10 +61,11 @@ DevTools VS Code 开发者工具集成系统是一个基于 Chrome 扩展和 Aut
 - **IDE工作区发现**：自动检测已打开的IDE工作区，优先在当前工作区中搜索文件
 - **热键命令支持**：提供键盘快捷键快速访问功能
 - **增强调试能力**：新增虚拟桌面管理和窗口激活的详细调试日志
+- **优化的Git提交快捷键**：与VS Code标准快捷键保持一致，提升开发工作流体验
 
 该系统通过三个主要组件协同工作：Chrome DevTools 扩展、Node.js 原生主机和 AutoHotkey 辅助工具。
 
-**更新** 系统现已实现优化的原生主机安装机制，直接引用工作区源码而非复制副本，彻底解决了开发时的同步问题。同时增强了虚拟桌面管理功能，通过 IVirtualDesktopManager 接口提供更精确的窗口检测，并支持 'Qoder IDE' 进程命名约定。新增的 IsWindowOnCurrentVirtualDesktop 函数能够准确判断窗口是否位于当前虚拟桌面，显著提升了跨桌面环境下的用户体验。
+**更新** 系统现已实现优化的原生主机安装机制，直接引用工作区源码而非复制副本，彻底解决了开发时的同步问题。同时增强了虚拟桌面管理功能，通过 IVirtualDesktopManager 接口提供更精确的窗口检测，并支持 'Qoder IDE' 进程命名约定。新增的 IsWindowOnCurrentVirtualDesktop 函数能够准确判断窗口是否位于当前虚拟桌面，显著提升了跨桌面环境下的用户体验。**新增** Git提交快捷键已从 Alt+9 优化为 Ctrl+Shift+G，与VS Code标准快捷键保持一致，改善了开发工作流体验。
 
 ## 项目结构
 
@@ -96,6 +99,7 @@ E[OpenControllerFromNetwork.ahk] --> E1[IsWindowOnCurrentVirtualDesktop]
 E --> E2[GetWindowDesktopId]
 F[ListQoderWindows.ahk] --> F1[窗口检测]
 G[hotkey.ahk] --> G1[Qoder IDE支持]
+H[superFlow.ahk] --> H1[Git提交快捷键优化]
 end
 A5 --> A6[host.js]
 A5 --> A7[install-native-host.ps1]
@@ -107,6 +111,7 @@ A5 --> A8[README.md]
 - [bridge.js:1-142](file://get-source-panel-line-number/bridge.js#L1-L142)
 - [host.js:1-260](file://devtools-vscode-opener/native-host/host.js#L1-L260)
 - [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
+- [superFlow.ahk:47-50](file://superFlow.ahk#L47-L50)
 
 **章节来源**
 - [README.md:1-2](file://README.md#L1-L2)
@@ -573,6 +578,7 @@ I --> J[激活可见窗口]
 
 - **打开到 VS Code**：Alt+Shift+O
 - **打开到 Qoder**：Alt+Shift+Q
+- **Git 提交**：Ctrl+Shift+G（与VS Code标准快捷键一致）
 
 ### 热键工作机制
 
@@ -581,17 +587,29 @@ flowchart TD
 A[用户按下热键] --> B{检测热键类型}
 B --> |Alt+Shift+O| C[触发 OPEN_VSCODE]
 B --> |Alt+Shift+Q| D[触发 OPEN_QODER]
-C --> E[查找活动标签页]
-D --> E
-E --> F[获取 DevTools 连接]
-F --> G[发送打开请求]
-G --> H[调用原生主机]
-H --> I[启动 IDE 并定位文件]
+B --> |Ctrl+Shift+G| E[触发 Git Commit]
+C --> F[查找活动标签页]
+D --> F
+E --> F
+F --> G[获取 DevTools 连接]
+G --> H[发送打开请求]
+H --> I[调用原生主机]
+I --> J[启动 IDE 并定位文件]
 ```
 
 **图表来源**
 - [manifest.json:9-24](file://devtools-vscode-opener/manifest.json#L9-L24)
 - [background.js:75-94](file://devtools-vscode-opener/background.js#L75-L94)
+- [superFlow.ahk:47-50](file://superFlow.ahk#L47-L50)
+
+### Git 提交快捷键优化
+
+**新增** 系统现在支持优化的 Git 提交快捷键，与 VS Code 标准快捷键保持一致：
+
+- **快捷键映射**：在 Code.exe、Qoder CN IDE.exe、Qoder IDE.exe、Qoder.exe 中，^!+1 会发送 Ctrl+Shift+G
+- **标准一致性**：与 VS Code 的默认 Git 提交快捷键保持一致，提升用户体验
+- **多IDE支持**：同时支持 IntelliJ IDEA 的 Ctrl+K 快捷键
+- **智能检测**：根据活动窗口自动选择合适的快捷键映射
 
 ### 热键回退机制
 
@@ -604,6 +622,7 @@ H --> I[启动 IDE 并定位文件]
 **章节来源**
 - [manifest.json:9-24](file://devtools-vscode-opener/manifest.json#L9-L24)
 - [background.js:75-94](file://devtools-vscode-opener/background.js#L75-L94)
+- [superFlow.ahk:47-50](file://superFlow.ahk#L47-L50)
 
 ## 依赖关系分析
 
@@ -618,36 +637,44 @@ C[Windows API]
 D[PowerShell CLI]
 E[Chrome Extension API]
 F[IVirtualDesktopManager]
+G[AutoHotkey Runtime]
 end
 subgraph "核心组件"
-G[DevTools Extension]
-H[Native Host]
-I[CDP Bridge]
-J[AHK Utilities]
+H[DevTools Extension]
+I[Native Host]
+J[CDP Bridge]
+K[AHK Utilities]
+L[SuperFlow Tools]
 end
 subgraph "IDE集成"
-K[VS Code]
-L[Qoder]
-M[其他IDE]
+M[VS Code]
+N[Qoder]
+O[IntelliJ IDEA]
+P[其他IDE]
 end
-A --> G
-B --> H
-C --> H
-D --> H
-E --> G
-F --> H
-G --> H
-H --> K
-H --> L
-H --> M
-I --> G
-J --> G
+A --> H
+B --> I
+C --> I
+D --> I
+E --> H
+F --> I
+G --> K
+G --> L
+H --> I
+I --> M
+I --> N
+I --> O
+I --> P
+J --> H
+K --> H
+L --> H
 ```
 
 **图表来源**
 - [manifest.json:25-31](file://devtools-vscode-opener/manifest.json#L25-L31)
 - [package.json:2-4](file://get-source-panel-line-number/package.json#L2-L4)
 - [host.js:157-181](file://devtools-vscode-opener/native-host/host.js#L157-L181)
+- [superFlow.ahk:47-50](file://superFlow.ahk#L47-L50)
 
 ### 组件耦合度分析
 
@@ -659,10 +686,12 @@ J --> G
 - **热键与扩展**：通过 Chrome commands API 实现独立的功能模块
 - **工作区发现与路径解析**：通过模块化设计实现功能分离
 - **虚拟桌面管理与窗口激活**：通过 IVirtualDesktopManager 接口实现解耦
+- **AutoHotkey 工具与系统集成**：通过 AHK 脚本实现系统级自动化
 
 **章节来源**
 - [background.js:1-95](file://devtools-vscode-opener/background.js#L1-L95)
 - [host.js:176-188](file://devtools-vscode-opener/native-host/host.js#L176-L188)
+- [superFlow.ahk:47-50](file://superFlow.ahk#L47-L50)
 
 ## 性能考虑
 
@@ -704,8 +733,9 @@ J --> K[最终失败]
 - **PowerShell 兼容性**：支持不同版本的 PowerShell 执行策略
 - **工作区发现平台限制**：仅在Windows平台上启用IDE工作区发现功能
 - **虚拟桌面功能降级**：当 IVirtualDesktopManager 不可用时自动回退到传统方法
+- **AutoHotkey 兼容性**：支持不同版本的 AutoHotkey 运行时
 
-**更新** 优化后的安装机制减少了PowerShell复杂性，提升了跨平台稳定性，并通过优雅的错误处理机制确保在各种环境下都能正常工作。直接引用工作区源码的方式确保了开发时的即时同步，无需重新部署。
+**更新** 优化后的安装机制减少了PowerShell复杂性，提升了跨平台稳定性，并通过优雅的错误处理机制确保在各种环境下都能正常工作。直接引用工作区源码的方式确保了开发时的即时同步，无需重新部署。**新增** Git提交快捷键优化确保了与VS Code标准快捷键的一致性，提升了开发工作流的流畅性。
 
 ## 故障排除指南
 
@@ -836,10 +866,43 @@ J --> K[最终失败]
     - 确认新的host.cmd文件指向工作区源码
     - 重新运行安装脚本以确保完全更新
 
+#### Git 提交快捷键问题
+
+**新增** 由于实现了优化的Git提交快捷键：
+
+14. **Git 提交快捷键无效**
+    - 确认 superFlow.ahk 脚本正在运行
+    - 检查活动窗口是否为支持的IDE（Code.exe、Qoder等）
+    - 验证 ^!+1 快捷键未被其他应用占用
+    - 确认 Ctrl+Shift+G 快捷键在IDE中正常工作
+
+15. **快捷键映射不正确**
+    - 检查 superFlow.ahk 中的窗口检测逻辑
+    - 验证进程名称匹配是否正确
+    - 确认热键绑定顺序和优先级
+    - 分析 AutoHotkey 日志输出
+
+#### AutoHotkey 相关问题
+
+**新增** 由于系统集成了AutoHotkey工具：
+
+16. **AutoHotkey 脚本执行失败**
+    - 确认 AutoHotkey v2 已正确安装
+    - 检查脚本文件编码和语法
+    - 验证脚本执行权限
+    - 查看 AutoHotkey 控制台输出
+
+17. **热键冲突问题**
+    - 检查全局热键是否与其他应用冲突
+    - 验证 #HotIf 条件判断逻辑
+    - 确认热键作用域设置正确
+    - 分析热键绑定优先级
+
 **章节来源**
 - [install-native-host.ps1:1-70](file://devtools-vscode-opener/native-host/install-native-host.ps1#L1-L70)
 - [get_line_number.ahk:115-159](file://get-source-panel-line-number/get_line_number.ahk#L115-L159)
 - [OpenControllerFromNetwork.ahk:314-326](file://OpenControllerFromNetwork.ahk#L314-L326)
+- [superFlow.ahk:47-50](file://superFlow.ahk#L47-L50)
 
 ### 调试工具和日志
 
@@ -852,13 +915,15 @@ J --> K[最终失败]
 - **CDP 调试**：桥接服务的健康检查和错误信息
 - **工作区发现日志**：PowerShell命令执行结果和工作区路径解析详情
 - **虚拟桌面日志**：IVirtualDesktopManager 操作记录和错误信息
+- **AutoHotkey 日志**：热键绑定和执行过程的详细记录
 
-**更新** 新增了IDE工作区发现和虚拟桌面管理的详细日志功能，便于问题排查。新的调试日志文件 ide-vdm-debug.log 记录了虚拟桌面操作的详细信息，包括 COM 接口调用结果、窗口检测结果和错误信息。同时，优化的安装机制确保了开发时的即时同步，无需重新部署即可看到代码更改的效果。
+**更新** 新增了IDE工作区发现和虚拟桌面管理的详细日志功能，便于问题排查。新的调试日志文件 ide-vdm-debug.log 记录了虚拟桌面操作的详细信息，包括 COM 接口调用结果、窗口检测结果和错误信息。同时，优化的安装机制确保了开发时的即时同步，无需重新部署即可看到代码更改的效果。**新增** Git提交快捷键优化提供了更好的开发体验，与VS Code标准快捷键保持一致，减少了学习成本。
 
 **章节来源**
 - [devtools.js:125-126](file://devtools-vscode-opener/devtools.js#L125-L126)
 - [host.js:139](file://devtools-vscode-opener/native-host/host.js#L139)
 - [host.js:207-220](file://devtools-vscode-opener/native-host/host.js#L207-L220)
+- [superFlow.ahk:47-50](file://superFlow.ahk#L47-L50)
 
 ## 结论
 
@@ -877,6 +942,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **增强调试**：新增虚拟桌面调试日志功能
 - **工作区优先搜索**：显著提升文件定位的准确性和速度
 - **'Qoder IDE' 支持**：专门支持最新的 Qoder IDE 进程命名约定
+- **标准化的Git提交快捷键**：与VS Code标准快捷键保持一致，提升开发体验
 
 ### 用户价值
 
@@ -889,6 +955,7 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **智能工作区检测**：自动识别已打开的工作区，提升文件搜索准确性
 - **精确的虚拟桌面感知**：确保只在当前桌面的窗口上执行操作
 - **开发时即时同步**：修改工作区源码后立即生效，无需重新部署
+- **标准化的快捷键体验**：Git提交快捷键与VS Code保持一致，减少切换成本
 
 ### 扩展性考虑
 
@@ -902,7 +969,8 @@ DevTools VS Code 开发者工具集成系统是一个设计精良、功能完备
 - **热键扩展**：可扩展的快捷键系统支持更多功能
 - **工作区发现扩展**：可扩展的工作区检测机制支持更多IDE
 - **虚拟桌面功能扩展**：基于 IVirtualDesktopManager 的架构支持更多虚拟桌面相关功能
+- **AutoHotkey 工具扩展**：支持更多的系统级自动化功能
 
-**更新** 优化后的安装机制显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。直接引用工作区源码的方式彻底解决了开发时的同步问题，使得开发体验更加流畅。新的IDE工作区发现功能通过智能检测当前桌面上已打开的IDE工作区，显著提升了文件定位的准确性和速度。新增的虚拟桌面管理功能通过 IVirtualDesktopManager 接口实现了更精确的窗口检测，特别是在多桌面环境下提供了更好的用户体验。新增的调试日志功能进一步优化了用户体验，便于用户理解和故障排除。
+**更新** 优化后的安装机制显著提升了系统的可靠性和可维护性，同时保持了原有的强大功能。直接引用工作区源码的方式彻底解决了开发时的同步问题，使得开发体验更加流畅。新的IDE工作区发现功能通过智能检测当前桌面上已打开的IDE工作区，显著提升了文件定位的准确性和速度。新增的虚拟桌面管理功能通过 IVirtualDesktopManager 接口实现了更精确的窗口检测，特别是在多桌面环境下提供了更好的用户体验。新增的调试日志功能进一步优化了用户体验，便于用户理解和故障排除。**新增** Git提交快捷键优化体现了系统对开发者工作流程的深入理解，通过与VS Code标准快捷键保持一致，显著提升了开发效率和用户体验质量。
 
-该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。优化的安装机制不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。新增的IDE工作区发现功能和增强的虚拟桌面管理能力体现了系统对开发者工作流程的深入理解和优化，真正做到了以用户为中心的设计理念。
+该系统代表了现代开发者工具的发展方向，通过智能化和自动化技术显著提升了开发效率和体验质量。优化的安装机制不仅提高了系统稳定性，也为未来的功能扩展奠定了更好的基础。新增的IDE工作区发现功能和增强的虚拟桌面管理能力体现了系统对开发者工作流程的深入理解和优化，真正做到了以用户为中心的设计理念。Git提交快捷键的标准化进一步优化了开发者的日常操作流程，使整个开发工具链更加协调统一。

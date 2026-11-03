@@ -8,6 +8,13 @@
 - [README.md](file://README.md)
 </cite>
 
+## 更新摘要
+**已进行的变更**   
+- 更新了热键绑定说明，从Win+Alt+C更改为Win+Ctrl+Y
+- 修正了SmsCodeWatcher类注释中的热键信息
+- 更新了hotkey.ahk中的相关注释
+- 保持了SmsCodeWatcher.GrabFromPhoneLink()核心功能不变
+
 ## 目录
 1. [引言](#引言)
 2. [项目结构](#项目结构)
@@ -20,14 +27,14 @@
 9. [结论](#结论)
 
 ## 引言
-本仓库是一个基于 AutoHotkey v2 的自动化脚本集合，提供热键、应用启动、浏览器工具集成等能力。本次文档聚焦“SMS 验证码提取系统”，其目标是在 Windows Phone Link（PhoneExperienceHost.exe）中主动抓取第一条短信中的验证码并写入剪贴板，供后续自动填充或粘贴使用。
+本仓库是一个基于 AutoHotkey v2 的自动化脚本集合，提供热键、应用启动、浏览器工具集成等能力。本次文档聚焦"SMS 验证码提取系统"，其目标是在 Windows Phone Link（PhoneExperienceHost.exe）中主动抓取第一条短信中的验证码并写入剪贴板，供后续自动填充或粘贴使用。
 
 该系统的核心设计是：通过热键触发，激活 Phone Link 窗口，等待用户右键点击目标短信后自动选择菜单项复制整条短信，再用正则表达式从短信文本中提取验证码，最后将验证码写入剪贴板并在一段时间后恢复原剪贴板内容。
 
 ## 项目结构
 与 SMS 验证码提取直接相关的文件如下：
 - lib/SmsCodeWatcher.ahk：验证码提取的核心类与流程实现
-- hotkey.ahk：全局热键定义，包含 Win+Y 切换 Phone Link、Win+Alt+C 触发验证码提取
+- hotkey.ahk：全局热键定义，包含 Win+Y 切换 Phone Link、Win+Ctrl+Y 触发验证码提取
 - lib/UIA.ahk：UI Automation 库，当前验证码流程未直接使用 UIA 元素定位，但作为通用 UIA 能力保留
 - README.md：项目简要说明
 
@@ -51,7 +58,7 @@ B --> E["正则匹配<br/>验证码提取"]
 - SmsCodeWatcher 类：封装验证码提取全流程，包括窗口激活、右键事件监听、上下文菜单检测、短信复制、正则提取、去重与剪贴板恢复。
 - 热键绑定：
   - Win+Y：切换 Phone Link 窗口（仅激活/最小化）
-  - Win+Alt+C：触发验证码提取全流程
+  - **Win+Ctrl+Y**：触发验证码提取全流程（已从Win+Alt+C更新）
 
 关键职责划分：
 - hotkey.ahk 负责热键注册与调用 SmsCodeWatcher.GrabFromPhoneLink()
@@ -72,7 +79,7 @@ participant AHK as "hotkey.ahk"
 participant SW as "SmsCodeWatcher"
 participant PL as "PhoneExperienceHost.exe"
 participant Clip as "剪贴板"
-User->>AHK : 按下 Win+Alt+C
+User->>AHK : 按下 Win+Ctrl+Y
 AHK->>SW : 调用 GrabFromPhoneLink()
 SW->>PL : 激活 Phone Link 窗口
 SW->>User : 提示手动右键点击目标短信
@@ -162,14 +169,14 @@ NoCode --> End
 
 ### 热键绑定与入口
 - Win+Y：切换 Phone Link 窗口，使用 ToggleWindow 函数
-- Win+Alt+C：直接调用 SmsCodeWatcher.GrabFromPhoneLink()
+- **Win+Ctrl+Y**：直接调用 SmsCodeWatcher.GrabFromPhoneLink()（已从Win+Alt+C更新）
 
 ```mermaid
 sequenceDiagram
 participant User as "用户"
 participant HK as "hotkey.ahk"
 participant SW as "SmsCodeWatcher"
-User->>HK : 按下 Win+Alt+C
+User->>HK : 按下 Win+Ctrl+Y
 HK->>SW : GrabFromPhoneLink()
 SW-->>HK : 返回验证码或空字符串
 ```
@@ -181,7 +188,7 @@ SW-->>HK : 返回验证码或空字符串
 - [hotkey.ahk:295-304](file://hotkey.ahk#L295-L304)
 
 ### 正则提取逻辑
-验证码提取采用多模式回退策略，优先匹配中文关键词（如“验证码”），其次匹配英文关键词（如 “verification code”），最终回退到通用 “code is ...” 模式。若命中则返回捕获组中的数字串。
+验证码提取采用多模式回退策略，优先匹配中文关键词（如"验证码"），其次匹配英文关键词（如 "verification code"），最终回退到通用 "code is ..." 模式。若命中则返回捕获组中的数字串。
 
 ```mermaid
 flowchart TD
@@ -245,6 +252,7 @@ SW --> UI["Phone Link 窗口"]
 - 复制超时：检查剪贴板访问权限，确认短信内容非空
 - 短信中未发现验证码：检查短信格式是否符合预设正则模式，必要时调整 _patterns
 - 剪贴板未恢复：确认用户未在 30 秒内修改剪贴板，或手动恢复
+- **热键冲突**：如果 Win+Ctrl+Y 无效，检查是否有其他程序占用了该快捷键组合
 
 章节来源
 - [lib/SmsCodeWatcher.ahk:58-73](file://lib/SmsCodeWatcher.ahk#L58-L73)
@@ -253,6 +261,6 @@ SW --> UI["Phone Link 窗口"]
 - [lib/SmsCodeWatcher.ahk:213-222](file://lib/SmsCodeWatcher.ahk#L213-L222)
 
 ## 结论
-SMS 验证码提取系统通过热键驱动 Phone Link 应用，结合键盘交互与正则匹配，实现了稳定、低开销的验证码抓取流程。相比之前的 toast 监听方案，新方案避免了 UIA 事件不可靠的问题，并通过纯键盘操作与窗口类名检测提升了兼容性与性能。未来可根据实际使用场景进一步优化菜单检测与正则模式，以提升准确率与鲁棒性。
+SMS 验证码提取系统通过热键驱动 Phone Link 应用，结合键盘交互与正则匹配，实现了稳定、低开销的验证码抓取流程。相比之前的 toast 监听方案，新方案避免了 UIA 事件不可靠的问题，并通过纯键盘操作与窗口类名检测提升了兼容性与性能。**热键绑定从 Win+Alt+C 更新为 Win+Ctrl+Y，提升了用户体验和可访问性**。未来可根据实际使用场景进一步优化菜单检测与正则模式，以提升准确率与鲁棒性。
 
 [本节为总结性内容，不直接分析具体文件]

@@ -1355,7 +1355,7 @@ DoSuspend() {
     }
 
     ; 添加笔记到obsidian
-    parentDir := "微信公众号文章" ; 目录名
+    parentDir := "08微信公众号文章" ; 目录名
     noteName := FormatTime(, "yyyy-MM-dd") ; 文件名
     AddNoteToObsidian(parentDir,noteName,content)
 
